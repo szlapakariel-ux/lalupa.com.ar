@@ -47,7 +47,13 @@ tests/unit|integration|e2e
 - `LedgerMovement` — libro de movimientos **inmutable** (solo INSERT):
   `PACK_PURCHASE, CLASS_USED, BONUS, CORRECTION_POS, CORRECTION_NEG,
   EXPIRATION, CANCELLATION, REVERSAL`. **El saldo siempre se deriva de la
-  suma de movimientos**, nunca de un contador editable.
+  suma de movimientos**, nunca de un contador editable. La inmutabilidad
+  está protegida **físicamente en PostgreSQL** (migración
+  `20260725180000_ledger_immutability`): un trigger rechaza todo `UPDATE`
+  o `DELETE` sobre la tabla, incluso por SQL directo con la conexión de la
+  aplicación. Las correcciones son siempre movimientos compensatorios
+  nuevos. (Un administrador total de PostgreSQL siempre puede alterar la
+  infraestructura deliberadamente; eso se mitiga con permisos y backups.)
 - `Payment` (anulación soft, nunca se borra), `AuditEvent`, `Settings`
   (reglas de consumo configurables).
 
@@ -82,21 +88,34 @@ npm run db:seed                # datos ficticios de desarrollo
 npm run dev                    # http://localhost:3000
 ```
 
-Credenciales del seed (solo desarrollo):
+Credenciales del seed (**EXCLUSIVAS de desarrollo local**; el seed
+productivo las rechaza explícitamente):
 `admin@lalupa.local` / `lupa-admin-dev` y `profe@lalupa.local` / `lupa-profe-dev`.
 
 ## Primer usuario administrador (producción)
 
-El seed en producción **solo** crea la administradora inicial y la
-configuración, y solo si se definen las variables:
+Con `NODE_ENV=production` el seed **solo** ejecuta el bootstrap de la
+primera administradora (`prisma/seed-admin.ts`); jamás carga datos
+ficticios ni usa credenciales de desarrollo. Reglas:
+
+- Sin `SEED_ADMIN_EMAIL` ni `SEED_ADMIN_PASSWORD`: no crea nada y termina
+  bien ("seed administrativo omitido").
+- Con **una sola** de las dos variables: aborta con error, sin crear nada.
+- Con ambas: exige email válido y contraseña de **al menos 12 caracteres**;
+  rechaza `lupa-admin-dev` y demás credenciales de desarrollo. La
+  contraseña nunca se imprime y solo se guarda su hash bcrypt.
+- Si ya existe **cualquier** usuario, nunca crea otra administradora:
+  con el mismo email termina sin cambios (idempotente, no toca contraseña
+  ni rol); con otro email aborta con error. Las cuentas adicionales se
+  crean desde `/gestion/usuarios`.
 
 ```bash
 SEED_ADMIN_EMAIL=... SEED_ADMIN_PASSWORD=... npx prisma db seed
 ```
 
 Ejecutarlo una única vez (por ejemplo con `railway run`) y luego **eliminar
-ambas variables**. Desde `/gestion/usuarios` esa administradora crea al
-resto del equipo.
+ambas variables** (el sistema no las necesita más). Desde
+`/gestion/usuarios` esa administradora crea al resto del equipo.
 
 ## Migraciones
 
