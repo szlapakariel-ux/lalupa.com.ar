@@ -77,7 +77,8 @@ tests/unit|integration|e2e
 
 ## Desarrollo local
 
-Requisitos: Node 20+ y npm. No hace falta Docker ni instalar PostgreSQL.
+Requisitos: Node 24.x y npm (ver `engines` en `package.json`; Railway lo
+usa para elegir el runtime). No hace falta Docker ni instalar PostgreSQL.
 
 ```bash
 npm install
