@@ -1,0 +1,365 @@
+// Modelo de datos del sistema de gestión interna de La Lupa.
+// Regla central: el saldo de clases NUNCA se guarda como contador editable;
+// se deriva de la suma de LedgerMovement (libro de movimientos inmutable).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  TEACHER
+}
+
+enum StudentStatus {
+  ACTIVA
+  PAUSADA
+  INACTIVA
+}
+
+enum Weekday {
+  LUNES
+  MARTES
+  MIERCOLES
+  JUEVES
+  VIERNES
+  SABADO
+  DOMINGO
+}
+
+enum PackStatus {
+  ACTIVO
+  AGOTADO
+  VENCIDO
+  CANCELADO
+}
+
+enum AttendanceStatus {
+  PRESENTE
+  CANCELO_A_TIEMPO
+  CANCELO_TARDE
+  AUSENTE
+  CLASE_PRUEBA
+}
+
+enum LedgerType {
+  PACK_PURCHASE
+  CLASS_USED
+  BONUS
+  CORRECTION_POS
+  CORRECTION_NEG
+  EXPIRATION
+  CANCELLATION
+  REVERSAL
+}
+
+enum PaymentStatus {
+  PENDIENTE
+  PAGADO
+  PARCIAL
+  BONIFICADO
+  ANULADO
+}
+
+enum PaymentMethod {
+  EFECTIVO
+  TRANSFERENCIA
+  MERCADO_PAGO
+  OTRO
+}
+
+enum AlertType {
+  ALERGIA
+  LESION
+  LIMITACION
+  RESTRICCION_ALIMENTARIA
+  CONTACTO_EMERGENCIA
+  OTRA
+}
+
+enum AlertVisibility {
+  TODOS
+  SOLO_ADMIN
+}
+
+enum AuditResult {
+  OK
+  ERROR
+  DENIED
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  role         Role      @default(TEACHER)
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions              Session[]
+  activities            Activity[]
+  packsCreated          StudentPack[]    @relation("packCreator")
+  attendancesRegistered Attendance[]     @relation("attRegistrar")
+  attendancesReverted   Attendance[]     @relation("attReverter")
+  ledgerMovements       LedgerMovement[]
+  paymentsCreated       Payment[]        @relation("paymentCreator")
+  paymentsAnnulled      Payment[]        @relation("paymentAnnuller")
+  alertsCreated         StudentAlert[]
+  auditEvents           AuditEvent[]
+  settingsUpdated       Settings[]
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  // sha256 del token; el token crudo solo vive en la cookie del usuario
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  ip        String?
+  userAgent String?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String // normalizado a minúsculas
+  ip        String
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+}
+
+model Student {
+  id                    String        @id @default(cuid())
+  firstName             String
+  lastName              String
+  status                StudentStatus @default(ACTIVA)
+  phone                 String?
+  email                 String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  // Observaciones administrativas (no médicas; lo sensible va en StudentAlert)
+  notes                 String?
+  deletedAt             DateTime? // soft delete
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  packs       StudentPack[]
+  attendances Attendance[]
+  ledger      LedgerMovement[]
+  payments    Payment[]
+  alerts      StudentAlert[]
+
+  @@index([status])
+  @@index([lastName, firstName])
+}
+
+model Activity {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  teacherId   String?
+  teacher     User?    @relation(fields: [teacherId], references: [id])
+  weekday     Weekday
+  // "HH:mm" en hora local argentina; sin timezone no hay ambigüedad
+  startTime   String
+  durationMin Int      @default(60)
+  capacity    Int?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  attendances Attendance[]
+  products    PackProduct[]
+
+  @@index([weekday, active])
+}
+
+model PackProduct {
+  id             String    @id @default(cuid())
+  name           String
+  classCount     Int
+  referencePrice Decimal   @db.Decimal(10, 2)
+  validityDays   Int
+  // null = aplica a cualquier actividad
+  activityId     String?
+  activity       Activity? @relation(fields: [activityId], references: [id])
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  studentPacks StudentPack[]
+}
+
+model StudentPack {
+  id          String      @id @default(cuid())
+  studentId   String
+  student     Student     @relation(fields: [studentId], references: [id])
+  productId   String
+  product     PackProduct @relation(fields: [productId], references: [id])
+  // Copiado del producto al momento de la venta (puede ajustarse)
+  classCount  Int
+  agreedPrice Decimal     @db.Decimal(10, 2)
+  startDate   DateTime    @db.Date
+  expiresAt   DateTime    @db.Date
+  status      PackStatus  @default(ACTIVO)
+  notes       String?
+  createdById String
+  createdBy   User        @relation("packCreator", fields: [createdById], references: [id])
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  ledger   LedgerMovement[]
+  payments Payment[]
+
+  @@index([studentId, status])
+  @@index([status, expiresAt])
+}
+
+model Attendance {
+  id             String           @id @default(cuid())
+  // Fecha LOCAL de la clase (sin hora)
+  date           DateTime         @db.Date
+  activityId     String
+  activity       Activity         @relation(fields: [activityId], references: [id])
+  studentId      String
+  student        Student          @relation(fields: [studentId], references: [id])
+  status         AttendanceStatus
+  notes          String?
+  registeredById String
+  registeredBy   User             @relation("attRegistrar", fields: [registeredById], references: [id])
+  revertedAt     DateTime?
+  revertedById   String?
+  revertedBy     User?            @relation("attReverter", fields: [revertedById], references: [id])
+  createdAt      DateTime         @default(now())
+
+  ledger LedgerMovement[]
+
+  // Barrera física contra el doble descuento de una misma clase
+  @@unique([studentId, activityId, date])
+  @@index([date, activityId])
+  @@index([studentId, date])
+}
+
+// INMUTABLE: solo se insertan filas; jamás UPDATE ni DELETE.
+// Una corrección o reversión es SIEMPRE un movimiento nuevo compensatorio.
+model LedgerMovement {
+  id            String       @id @default(cuid())
+  studentId     String
+  student       Student      @relation(fields: [studentId], references: [id])
+  studentPackId String?
+  studentPack   StudentPack? @relation(fields: [studentPackId], references: [id])
+  type          LedgerType
+  // + acredita clases, - debita clases
+  delta         Int
+  attendanceId  String?
+  attendance    Attendance?  @relation(fields: [attendanceId], references: [id])
+  paymentId     String?
+  // Un movimiento puede revertirse a lo sumo UNA vez (unique)
+  reversalOfId  String?      @unique
+  reversalOf    LedgerMovement? @relation("reversal", fields: [reversalOfId], references: [id])
+  reversedBy    LedgerMovement? @relation("reversal")
+  note          String?
+  createdById   String
+  createdBy     User         @relation(fields: [createdById], references: [id])
+  createdAt     DateTime     @default(now())
+
+  @@index([studentPackId])
+  @@index([studentId, createdAt])
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  studentId     String
+  student       Student       @relation(fields: [studentId], references: [id])
+  studentPackId String?
+  studentPack   StudentPack?  @relation(fields: [studentPackId], references: [id])
+  concept       String?
+  amount        Decimal       @db.Decimal(10, 2)
+  date          DateTime      @db.Date
+  method        PaymentMethod
+  status        PaymentStatus @default(PENDIENTE)
+  reference     String?
+  notes         String?
+  createdById   String
+  createdBy     User          @relation("paymentCreator", fields: [createdById], references: [id])
+  // Anulación soft: nunca se borra un pago
+  annulledAt   DateTime?
+  annulledById String?
+  annulledBy   User?          @relation("paymentAnnuller", fields: [annulledById], references: [id])
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([studentId, date])
+  @@index([status])
+}
+
+// Información mínima y operativa para prestar la actividad con seguridad.
+// NO es historia clínica. Acceso restringido por rol; nunca va a logs.
+model StudentAlert {
+  id          String          @id @default(cuid())
+  studentId   String
+  student     Student         @relation(fields: [studentId], references: [id])
+  type        AlertType
+  // Descripción breve (ej: "Alergia al maní")
+  title       String
+  // Indicación operativa (ej: "No ofrecer snacks con frutos secos")
+  instruction String?
+  visibility  AlertVisibility @default(TODOS)
+  active      Boolean         @default(true)
+  createdById String
+  createdBy   User            @relation(fields: [createdById], references: [id])
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([studentId, active])
+}
+
+model AuditEvent {
+  id       String      @id @default(cuid())
+  userId   String?
+  user     User?       @relation(fields: [userId], references: [id])
+  // ej: "attendance.register", "pack.assign", "auth.login"
+  action   String
+  entity   String
+  entityId String?
+  result   AuditResult @default(OK)
+  // Metadatos con whitelist explícita: jamás contraseñas, tokens ni
+  // contenido de alertas médicas.
+  metadata Json?
+  ip       String?
+  createdAt DateTime   @default(now())
+
+  @@index([entity, entityId])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+// Singleton (id = 1): reglas de consumo configurables.
+model Settings {
+  id                  Int      @id @default(1)
+  presentConsumes     Boolean  @default(true)
+  earlyCancelConsumes Boolean  @default(false)
+  lateCancelConsumes  Boolean  @default(true)
+  absentConsumes      Boolean  @default(true)
+  trialConsumes       Boolean  @default(false)
+  // Horas de anticipación para que una cancelación cuente como "a tiempo"
+  earlyCancelHours    Int      @default(24)
+  updatedById         String?
+  updatedBy           User?    @relation(fields: [updatedById], references: [id])
+  updatedAt           DateTime @updatedAt
+}
