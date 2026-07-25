@@ -33,7 +33,7 @@ export async function saveUserAction(
       name: str(formData, "name"),
       role: str(formData, "role"),
       password: optional(str(formData, "password")),
-      active: str(formData, "active") !== "false",
+      active: str(formData, "active") === "true",
     });
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };

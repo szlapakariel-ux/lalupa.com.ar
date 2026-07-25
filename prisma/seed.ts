@@ -3,7 +3,7 @@
  * En producción solo crea la administradora inicial si se setean
  * SEED_ADMIN_EMAIL y SEED_ADMIN_PASSWORD (y no existe ningún usuario).
  */
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type PackProduct, type Student } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -88,7 +88,7 @@ async function main() {
     { name: "Pack x4", classCount: 4, referencePrice: 40000, validityDays: 30 },
     { name: "Pack x8", classCount: 8, referencePrice: 72000, validityDays: 60 },
   ];
-  const prods = [];
+  const prods: PackProduct[] = [];
   for (const p of productos) {
     const existing = await prisma.packProduct.findFirst({ where: { name: p.name } });
     prods.push(existing ?? (await prisma.packProduct.create({ data: p })));
@@ -115,7 +115,7 @@ async function main() {
     { firstName: "Bianca", lastName: "Molina", phone: "11-5555-0012" },
   ];
 
-  const students = [];
+  const students: Student[] = [];
   for (const a of alumnas) {
     const existing = await prisma.student.findFirst({
       where: { firstName: a.firstName, lastName: a.lastName },

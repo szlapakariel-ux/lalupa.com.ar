@@ -38,7 +38,7 @@ function parseActivity(formData: FormData) {
     startTime: str(formData, "startTime"),
     durationMin: str(formData, "durationMin") || "60",
     capacity: optional(str(formData, "capacity")),
-    active: str(formData, "active") !== "false",
+    active: str(formData, "active") === "true",
   });
 }
 
@@ -94,7 +94,7 @@ export async function saveProductAction(
       referencePrice: str(formData, "referencePrice"),
       validityDays: str(formData, "validityDays"),
       activityId: optional(str(formData, "activityId")),
-      active: str(formData, "active") !== "false",
+      active: str(formData, "active") === "true",
     });
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
