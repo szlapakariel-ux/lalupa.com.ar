@@ -108,6 +108,17 @@ ficticios ni usa credenciales de desarrollo. Reglas:
   con el mismo email termina sin cambios (idempotente, no toca contraseña
   ni rol); con otro email aborta con error. Las cuentas adicionales se
   crean desde `/gestion/usuarios`.
+- **Ejecuciones simultáneas** (varios procesos o réplicas, p. ej. en
+  Railway): el contar-y-crear corre dentro de una única transacción
+  serializada con un advisory lock transaccional de PostgreSQL
+  (`pg_advisory_xact_lock(20260725, 1)`, clave fija documentada en
+  `prisma/seed-admin.ts`). A lo sumo un proceso crea la administradora;
+  el resto espera el lock, relee el estado ya committeado y aplica las
+  reglas anteriores (idempotencia o rechazo). El lock se libera solo al
+  terminar la transacción (commit, rollback o corte de conexión) y no
+  bloquea ninguna otra operación del sistema. Límite: la exclusión vale
+  dentro del **mismo** PostgreSQL (es el caso de la app); no cubre
+  bases de datos distintas.
 
 ```bash
 SEED_ADMIN_EMAIL=... SEED_ADMIN_PASSWORD=... npx prisma db seed
@@ -129,8 +140,12 @@ ambas variables** (el sistema no las necesita más). Desde
 npm run lint        # ESLint
 npm run typecheck   # tsc --noEmit
 npm run test        # unitarios (sin DB)
-npm run test:int    # integración: levanta Postgres embebido efímero en :5434
-                    #   y aplica las migraciones sobre una base limpia
+npm run test:int    # integración (scripts/test-int.mjs): genera Prisma
+                    #   Client ANTES de cargar los tests, levanta Postgres
+                    #   embebido efímero en :5434, aplica las migraciones
+                    #   sobre una base limpia y devuelve exit code distinto
+                    #   de cero ante CUALQUIER fallo (generate, setup,
+                    #   carga de tests, tests o teardown) — apto para CI
 npm run test:e2e    # Playwright (requiere dev-db en :5433 con seed aplicado)
 ```
 
