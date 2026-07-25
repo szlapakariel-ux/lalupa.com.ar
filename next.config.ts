@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 // Encabezados de seguridad solo para el área privada /gestion.
 // La página pública en "/" queda intacta e indexable.
@@ -16,6 +17,9 @@ const gestionHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Evita que Next infiera mal la raíz del workspace si existen otros
+  // lockfiles fuera del proyecto.
+  outputFileTracingRoot: path.join(__dirname),
   async rewrites() {
     return {
       // El sitio público original (public/index.html, sin modificaciones)

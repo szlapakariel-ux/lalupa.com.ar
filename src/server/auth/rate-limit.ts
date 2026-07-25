@@ -1,8 +1,11 @@
 import { prisma } from "@/server/db";
 
-// 5 intentos fallidos en 15 minutos por email O por IP bloquean el login.
-// Basado en DB: funciona con múltiples instancias y sin dependencias externas.
-export const LOGIN_MAX_FAILURES = 5;
+// Rate limit de login basado en DB (funciona con múltiples instancias):
+// - por EMAIL: 5 intentos fallidos en 15 minutos (protección principal);
+// - por IP: 30 intentos fallidos en 15 minutos (red de contención más
+//   gruesa contra barridos de muchas cuentas desde un mismo origen).
+export const LOGIN_MAX_FAILURES_EMAIL = 5;
+export const LOGIN_MAX_FAILURES_IP = 30;
 export const LOGIN_WINDOW_MINUTES = 15;
 
 export async function isLoginBlocked(email: string, ip: string): Promise<boolean> {
@@ -15,7 +18,7 @@ export async function isLoginBlocked(email: string, ip: string): Promise<boolean
       where: { ip, success: false, createdAt: { gte: since } },
     }),
   ]);
-  return byEmail >= LOGIN_MAX_FAILURES || byIp >= LOGIN_MAX_FAILURES;
+  return byEmail >= LOGIN_MAX_FAILURES_EMAIL || byIp >= LOGIN_MAX_FAILURES_IP;
 }
 
 export async function recordLoginAttempt(
