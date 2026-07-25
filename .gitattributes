@@ -1,0 +1,3 @@
+# Sin conversión de fin de línea: preserva los bytes exactos de los archivos
+# (crítico para public/index.html, que debe servirse idéntico al original).
+* -text
