@@ -11,24 +11,29 @@ test.describe("Flujo completo de gestión", () => {
     const apellido = `E2E-${Date.now()}`;
 
     await login(page, ADMIN_EMAIL, ADMIN_PASSWORD);
+    // Esperar el redirect post-login antes de navegar (evita carrera con la cookie)
+    await expect(page).toHaveURL(/\/gestion$/);
 
     // 1. Alta de alumna
     await page.goto("/gestion/alumnas/nueva");
-    await page.getByLabel("Nombre", { exact: true }).fill("Prueba");
-    await page.getByLabel("Apellido", { exact: true }).fill(apellido);
+    // Los campos requeridos exponen el asterisco en su label accesible
+    await page.getByLabel("Nombre *").fill("Prueba");
+    await page.getByLabel("Apellido *").fill(apellido);
     await page.getByLabel("Teléfono", { exact: true }).fill("11-0000-0000");
     await page.getByRole("button", { name: "Crear alumna" }).click();
     await expect(page.getByRole("status")).toContainText("Alumna creada");
 
     // 2. Buscarla en el listado y abrir "Pack / pago"
     await page.goto(`/gestion/alumnas?q=${apellido}`);
-    const card = page.locator("div", { hasText: `${apellido}, Prueba` }).last();
     await expect(page.getByText(`${apellido}, Prueba`)).toBeVisible();
     await expect(page.getByText("0 disponibles")).toBeVisible();
     await page.getByRole("link", { name: "Pack / pago" }).click();
 
-    // 3. Cargar un pack con pago
+    // 3. Cargar un pack con pago (Pack x4 para que quede saldo tras una clase)
     await expect(page.getByRole("heading", { name: /Cargar pack/ })).toBeVisible();
+    const producto = page.getByLabel("Producto *");
+    await producto.selectOption({ index: 1 });
+    await expect(producto).toContainText("Pack x4");
     await page.getByRole("button", { name: "Cargar pack" }).click();
     await expect(page.getByRole("status")).toContainText("Pack cargado");
 
@@ -41,7 +46,7 @@ test.describe("Flujo completo de gestión", () => {
 
     // 5. Doble marca: bloqueada, el saldo no cambia dos veces
     await page.getByRole("button", { name: "Confirmar asistencia" }).click();
-    await expect(page.getByRole("alert")).toContainText("ya estaba registrada");
+    await expect(page.locator('p[role="alert"]')).toContainText("ya estaba registrada");
 
     // 6. La ficha muestra el movimiento y el saldo correcto
     await page.goto(`/gestion/alumnas?q=${apellido}`);
@@ -53,7 +58,6 @@ test.describe("Flujo completo de gestión", () => {
     // 7. Revertir desde "Clases de hoy" (acepta el confirm del navegador)
     await page.goto("/gestion/asistencia");
     page.on("dialog", (dialog) => dialog.accept());
-    const fila = page.locator("div", { hasText: `${apellido}, Prueba` }).last();
     await page.getByRole("button", { name: "Revertir" }).last().click();
     await expect(page.getByText(/revertida/i).first()).toBeVisible();
 
@@ -62,7 +66,5 @@ test.describe("Flujo completo de gestión", () => {
     await page.getByRole("link", { name: "Ver ficha" }).click();
     await expect(page.getByText("Reversión").first()).toBeVisible();
     await expect(page.getByText("Clase utilizada").first()).toBeVisible();
-    void card;
-    void fila;
   });
 });

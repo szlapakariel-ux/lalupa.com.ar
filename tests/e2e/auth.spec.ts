@@ -1,10 +1,14 @@
 import { expect, test } from "@playwright/test";
 import { ADMIN_EMAIL, ADMIN_PASSWORD, TEACHER_EMAIL, TEACHER_PASSWORD, login } from "./helpers";
 
+// El announcer de rutas de Next también expone role="alert": apuntamos al
+// aviso de error concreto (<p role="alert">) para evitar ambigüedad.
+const errorAlert = 'p[role="alert"]';
+
 test.describe("Autenticación", () => {
   test("credenciales inválidas muestran error genérico", async ({ page }) => {
     await login(page, ADMIN_EMAIL, "contrasena-incorrecta");
-    await expect(page.getByRole("alert")).toContainText("incorrectos");
+    await expect(page.locator(errorAlert)).toContainText("incorrectos");
     await expect(page).toHaveURL(/\/gestion\/login$/);
   });
 
@@ -13,8 +17,10 @@ test.describe("Autenticación", () => {
     await expect(page).toHaveURL(/\/gestion$/);
     await expect(page.getByText("Clases del día")).toBeVisible();
 
+    // En mobile el botón del sidebar existe pero está oculto: filtrar visibles
     await page
       .getByRole("button", { name: /Cerrar sesión|Salir/ })
+      .filter({ visible: true })
       .first()
       .click();
     await expect(page).toHaveURL(/\/gestion\/login$/);
@@ -30,10 +36,10 @@ test.describe("Autenticación", () => {
     const email = `inexistente-${Date.now()}@test.local`;
     for (let i = 0; i < 5; i++) {
       await login(page, email, "clave-mala");
-      await expect(page.getByRole("alert")).toBeVisible();
+      await expect(page.locator(errorAlert)).toBeVisible();
     }
     await login(page, email, "clave-mala");
-    await expect(page.getByRole("alert")).toContainText("Demasiados intentos");
+    await expect(page.locator(errorAlert)).toContainText("Demasiados intentos");
   });
 });
 

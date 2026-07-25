@@ -5,7 +5,6 @@ import { annulPayment, registerPayment } from "@/server/services/payments";
 import { createAlert, createStudent } from "@/server/services/students";
 import { addDaysYMD, dateToYMD, todayYMD } from "@/lib/dates";
 import {
-  makeActivity,
   makeAdmin,
   makePackWithCredit,
   makeProduct,
