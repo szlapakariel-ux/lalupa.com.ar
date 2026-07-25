@@ -1,10 +1,19 @@
 /**
- * Seed de DESARROLLO — datos ficticios, idempotente (se puede correr N veces).
- * En producción solo crea la administradora inicial si se setean
- * SEED_ADMIN_EMAIL y SEED_ADMIN_PASSWORD (y no existe ningún usuario).
+ * Seed con dos modos EXCLUYENTES según NODE_ENV:
+ *
+ *  - PRODUCCIÓN: solo el bootstrap de la primera administradora
+ *    (ver prisma/seed-admin.ts). Exige SEED_ADMIN_EMAIL y
+ *    SEED_ADMIN_PASSWORD juntas, valida la contraseña, nunca crea usuarios
+ *    si ya existe alguno y nunca usa credenciales de desarrollo.
+ *
+ *  - DESARROLLO: datos ficticios idempotentes (se puede correr N veces) con
+ *    credenciales documentadas SOLO para uso local
+ *    (admin@lalupa.local / lupa-admin-dev). Estas credenciales jamás se
+ *    aplican en producción.
  */
 import { PrismaClient, type PackProduct, type Student } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { SeedConfigError, seedProductionAdmin } from "./seed-admin";
 
 const prisma = new PrismaClient();
 
@@ -17,39 +26,34 @@ const daysFromNow = (n: number) => {
 };
 
 async function main() {
-  const isProduction = process.env.NODE_ENV === "production";
-
-  // ── Primer usuario administrador ─────────────────────────────────────────
-  const adminEmail = process.env.SEED_ADMIN_EMAIL || "admin@lalupa.local";
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD || "lupa-admin-dev";
-
-  if (isProduction && !process.env.SEED_ADMIN_EMAIL) {
-    console.log("Producción sin SEED_ADMIN_EMAIL: no se crea nada.");
+  if (process.env.NODE_ENV === "production") {
+    // Producción: SOLO el bootstrap seguro de la primera administradora.
+    // Nunca datos ficticios ni credenciales de desarrollo.
+    await seedProductionAdmin(prisma, {
+      SEED_ADMIN_EMAIL: process.env.SEED_ADMIN_EMAIL,
+      SEED_ADMIN_PASSWORD: process.env.SEED_ADMIN_PASSWORD,
+    });
     return;
   }
 
+  // ── Usuarios de DESARROLLO (credenciales ficticias, solo uso local) ──────
   const admin = await prisma.user.upsert({
-    where: { email: adminEmail },
+    where: { email: "admin@lalupa.local" },
     update: {},
     create: {
-      email: adminEmail,
+      email: "admin@lalupa.local",
       name: "Administradora",
-      passwordHash: await bcrypt.hash(adminPassword, 11),
+      passwordHash: await bcrypt.hash("lupa-admin-dev", 11),
       role: "ADMIN",
     },
   });
-  console.log(`Admin lista: ${admin.email}`);
+  console.log(`Admin de desarrollo lista: ${admin.email}`);
 
   await prisma.settings.upsert({
     where: { id: 1 },
     update: {},
     create: { id: 1 },
   });
-
-  if (isProduction) {
-    console.log("Producción: solo admin + configuración. Fin.");
-    return;
-  }
 
   // ── Datos ficticios de desarrollo ────────────────────────────────────────
   const profe = await prisma.user.upsert({
@@ -283,7 +287,13 @@ async function main() {
 
 main()
   .catch((e) => {
-    console.error(e);
+    // Los errores de configuración traen un mensaje seguro (sin contraseñas);
+    // se imprime solo ese mensaje, sin stack ni variables de entorno.
+    if (e instanceof SeedConfigError) {
+      console.error(`Seed abortado: ${e.message}`);
+    } else {
+      console.error(e);
+    }
     process.exit(1);
   })
   .finally(() => prisma.$disconnect());
