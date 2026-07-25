@@ -17,6 +17,13 @@ const gestionHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // El type-check del build cubre SOLO el código de la aplicación: los
+  // tests y sus configs importan devDependencies (vitest, playwright,
+  // embedded-postgres) que — correctamente — no existen en la instalación
+  // productiva (NODE_ENV=production omite devDependencies), y romperían
+  // `next build` en Railway. La cobertura completa, tests incluidos, la da
+  // `npm run typecheck` con el tsconfig.json completo.
+  typescript: { tsconfigPath: "tsconfig.build.json" },
   // Evita que Next infiera mal la raíz del workspace si existen otros
   // lockfiles fuera del proyecto.
   outputFileTracingRoot: path.join(__dirname),
