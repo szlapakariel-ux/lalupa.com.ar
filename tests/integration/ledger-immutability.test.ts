@@ -21,6 +21,7 @@ import { todayYMD } from "@/lib/dates";
 import {
   makeActivity,
   makeAdmin,
+  makeEnrollment,
   makePackWithCredit,
   makeProduct,
   makeStudent,
@@ -36,6 +37,7 @@ async function fixture() {
   const teacher = await makeTeacher();
   const student = await makeStudent();
   const activity = await makeActivity();
+  await makeEnrollment({ studentId: student.id, disciplineId: activity.disciplineId });
   const product = await makeProduct();
   const pack = await makePackWithCredit({
     studentId: student.id,

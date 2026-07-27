@@ -23,17 +23,31 @@ test.describe("Flujo completo de gestión", () => {
     await page.getByRole("button", { name: "Crear alumna" }).click();
     await expect(page.getByRole("status")).toContainText("Alumna creada");
 
-    // 2. Buscarla en el listado y abrir "Pack / pago"
+    // 2. Inscribirla en la disciplina Yoga desde su ficha (no consume clases)
     await page.goto(`/gestion/alumnas?q=${apellido}`);
     await expect(page.getByText(`${apellido}, Prueba`)).toBeVisible();
     await expect(page.getByText("0 disponibles")).toBeVisible();
-    await page.getByRole("link", { name: "Pack / pago" }).click();
+    await page.getByRole("link", { name: "Ver ficha" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Actividades e inscripciones" }),
+    ).toBeVisible();
+    await page.getByLabel("Disciplina", { exact: true }).selectOption({ label: "Yoga" });
+    await page.getByRole("button", { name: "Inscribir" }).click();
+    await expect(page.getByRole("status")).toContainText("Inscripción creada");
+    await expect(
+      page.getByText("Horario habitual pendiente de confirmación"),
+    ).toBeVisible();
 
-    // 3. Cargar un pack con pago (Pack x4 para que quede saldo tras una clase)
+    // 3. Cargar un pack con pago (Pack x4 genérico: saldo tras una clase)
+    await page.goto(`/gestion/alumnas?q=${apellido}`);
+    await page.getByRole("link", { name: "Pack / pago" }).click();
     await expect(page.getByRole("heading", { name: /Cargar pack/ })).toBeVisible();
     const producto = page.getByLabel("Producto *");
-    await producto.selectOption({ index: 1 });
-    await expect(producto).toContainText("Pack x4");
+    const packX4 = await producto
+      .locator("option", { hasText: /^Pack x4 — 4 clases/ })
+      .first()
+      .getAttribute("value");
+    await producto.selectOption(packX4!);
     await page.getByRole("button", { name: "Cargar pack" }).click();
     await expect(page.getByRole("status")).toContainText("Pack cargado");
 
@@ -55,8 +69,11 @@ test.describe("Flujo completo de gestión", () => {
     await expect(page.getByText("Clase utilizada").first()).toBeVisible();
     await expect(page.getByText("Compra de pack").first()).toBeVisible();
 
-    // 7. Revertir desde "Clases de hoy" (acepta el confirm del navegador)
+    // 7. Revertir desde "Clases de hoy": elegir la disciplina Yoga y su
+    //    horario de hoy (acepta el confirm del navegador)
     await page.goto("/gestion/asistencia");
+    await page.getByLabel("Disciplina", { exact: true }).selectOption({ label: "Yoga" });
+    await page.getByRole("button", { name: "Ver clase" }).click();
     page.on("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "Revertir" }).last().click();
     await expect(page.getByText(/revertida/i).first()).toBeVisible();

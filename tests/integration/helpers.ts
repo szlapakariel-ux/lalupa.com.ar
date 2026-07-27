@@ -1,12 +1,14 @@
+import type { Weekday } from "@prisma/client";
 import { prisma } from "@/server/db";
-import { addDaysYMD, todayYMD, ymdToDate } from "@/lib/dates";
+import { addDaysYMD, todayYMD, weekdayOfYMD, ymdToDate } from "@/lib/dates";
 
 /** Limpia todas las tablas entre tests (respetando FKs con TRUNCATE CASCADE). */
 export async function resetDb() {
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
       "AuditEvent", "LedgerMovement", "Attendance", "Payment",
-      "StudentAlert", "StudentPack", "PackProduct", "Activity",
+      "StudentAlert", "StudentPack", "PackProduct",
+      "StudentDisciplineEnrollment", "Activity", "Discipline",
       "Student", "LoginAttempt", "Session", "Settings", "User"
     CASCADE
   `);
@@ -33,27 +35,80 @@ export async function makeStudent(overrides: { firstName?: string; lastName?: st
   });
 }
 
-export async function makeActivity(overrides: { name?: string } = {}) {
+let disciplineSeq = 0;
+
+export async function makeDiscipline(overrides: { name?: string; active?: boolean } = {}) {
+  const name = overrides.name ?? `Disciplina Test ${++disciplineSeq}`;
+  return prisma.discipline.create({
+    data: {
+      name,
+      normalizedName: name.trim().replace(/\s+/g, " ").toLowerCase(),
+      active: overrides.active ?? true,
+    },
+  });
+}
+
+/**
+ * Horario de prueba. Por defecto cae en el día de la semana de HOY para que
+ * registerAttendance con todayYMD() pase la validación de fecha.
+ */
+export async function makeActivity(
+  overrides: {
+    name?: string;
+    disciplineId?: string;
+    weekday?: Weekday;
+    startTime?: string;
+    teacherId?: string | null;
+    active?: boolean;
+  } = {},
+) {
+  const disciplineId =
+    overrides.disciplineId ?? (await makeDiscipline({ name: overrides.name })).id;
   return prisma.activity.create({
     data: {
-      name: overrides.name ?? "Yoga Test",
-      weekday: "LUNES",
-      startTime: "18:00",
+      name: overrides.name ?? "Horario Test",
+      disciplineId,
+      weekday: overrides.weekday ?? weekdayOfYMD(todayYMD()),
+      startTime: overrides.startTime ?? "18:00",
       durationMin: 60,
+      teacherId: overrides.teacherId ?? null,
+      active: overrides.active ?? true,
+    },
+  });
+}
+
+/** Inscripción activa de la alumna en la disciplina (no consume clases). */
+export async function makeEnrollment(input: {
+  studentId: string;
+  disciplineId: string;
+  preferredActivityId?: string | null;
+  active?: boolean;
+}) {
+  return prisma.studentDisciplineEnrollment.create({
+    data: {
+      studentId: input.studentId,
+      disciplineId: input.disciplineId,
+      preferredActivityId: input.preferredActivityId ?? null,
+      active: input.active ?? true,
     },
   });
 }
 
 export async function makeProduct(
-  overrides: { classCount?: number; validityDays?: number; activityId?: string | null } = {},
+  overrides: {
+    name?: string;
+    classCount?: number;
+    validityDays?: number;
+    disciplineId?: string | null;
+  } = {},
 ) {
   return prisma.packProduct.create({
     data: {
-      name: `Pack x${overrides.classCount ?? 4}`,
+      name: overrides.name ?? `Pack x${overrides.classCount ?? 4}`,
       classCount: overrides.classCount ?? 4,
       referencePrice: 40000,
       validityDays: overrides.validityDays ?? 30,
-      activityId: overrides.activityId ?? null,
+      disciplineId: overrides.disciplineId ?? null,
     },
   });
 }

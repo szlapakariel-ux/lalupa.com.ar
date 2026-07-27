@@ -6,6 +6,7 @@ import { addDaysYMD, todayYMD } from "@/lib/dates";
 import {
   makeActivity,
   makeAdmin,
+  makeEnrollment,
   makePackWithCredit,
   makeProduct,
   makeStudent,
@@ -22,6 +23,7 @@ describe("registerAttendance (transaccional)", () => {
     const teacher = await makeTeacher();
     const student = await makeStudent();
     const activity = await makeActivity();
+    await makeEnrollment({ studentId: student.id, disciplineId: activity.disciplineId });
     const product = await makeProduct();
     const pack = await makePackWithCredit({
       studentId: student.id,
@@ -90,10 +92,11 @@ describe("registerAttendance (transaccional)", () => {
 
   it("CANCELO_A_TIEMPO y CLASE_PRUEBA no consumen con la configuración predeterminada", async () => {
     const f = await fixture();
+    // Fechas distintas pero del MISMO día de semana del horario.
     const r1 = await registerAttendance({
       studentId: f.student.id,
       activityId: f.activity.id,
-      dateYMD: "2026-07-20",
+      dateYMD: todayYMD(),
       status: "CANCELO_A_TIEMPO",
       userId: f.teacher.id,
       userRole: "TEACHER",
@@ -102,7 +105,7 @@ describe("registerAttendance (transaccional)", () => {
     const r2 = await registerAttendance({
       studentId: f.student.id,
       activityId: f.activity.id,
-      dateYMD: "2026-07-21",
+      dateYMD: addDaysYMD(todayYMD(), 7),
       status: "CLASE_PRUEBA",
       userId: f.teacher.id,
       userRole: "TEACHER",
@@ -124,7 +127,8 @@ describe("registerAttendance (transaccional)", () => {
     await registerAttendance({
       studentId: f.student.id,
       activityId: f.activity.id,
-      dateYMD: addDaysYMD(todayYMD(), 1),
+      // misma semana siguiente: mismo día de semana del horario
+      dateYMD: addDaysYMD(todayYMD(), 7),
       status: "AUSENTE",
       userId: f.teacher.id,
       userRole: "TEACHER",
@@ -137,6 +141,7 @@ describe("registerAttendance (transaccional)", () => {
     const teacher = await makeTeacher();
     const student = await makeStudent();
     const activity = await makeActivity();
+    await makeEnrollment({ studentId: student.id, disciplineId: activity.disciplineId });
     await expect(
       registerAttendance({
         studentId: student.id,
@@ -157,6 +162,7 @@ describe("registerAttendance (transaccional)", () => {
     const teacher = await makeTeacher();
     const student = await makeStudent();
     const activity = await makeActivity();
+    await makeEnrollment({ studentId: student.id, disciplineId: activity.disciplineId });
     const product = await makeProduct({ classCount: 1 });
     const pack = await makePackWithCredit({
       studentId: student.id,
@@ -194,6 +200,7 @@ describe("registerAttendance (transaccional)", () => {
     const admin = await makeAdmin();
     const student = await makeStudent();
     const activity = await makeActivity();
+    await makeEnrollment({ studentId: student.id, disciplineId: activity.disciplineId });
     const product = await makeProduct();
     const packLargo = await makePackWithCredit({
       studentId: student.id,
@@ -231,6 +238,7 @@ describe("revertAttendance (reversión trazable)", () => {
     const admin = await makeAdmin();
     const student = await makeStudent();
     const activity = await makeActivity();
+    await makeEnrollment({ studentId: student.id, disciplineId: activity.disciplineId });
     const product = await makeProduct();
     const pack = await makePackWithCredit({
       studentId: student.id,

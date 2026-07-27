@@ -47,7 +47,7 @@ function pack(overrides: Partial<PackForSelection>): PackForSelection {
     expiresAtYMD: "2026-08-31",
     startDateYMD: "2026-07-01",
     createdAt: new Date("2026-07-01T12:00:00Z"),
-    productActivityId: null,
+    productDisciplineId: null,
     balance: 3,
     ...overrides,
   };
@@ -55,23 +55,23 @@ function pack(overrides: Partial<PackForSelection>): PackForSelection {
 
 describe("isPackEligible (vigencia y compatibilidad)", () => {
   const date = "2026-07-25";
-  it("acepta un pack activo, vigente, con saldo y actividad compatible", () => {
-    expect(isPackEligible(pack({}), "act1", date)).toBe(true);
-    expect(isPackEligible(pack({ productActivityId: "act1" }), "act1", date)).toBe(true);
+  it("acepta un pack activo, vigente, con saldo y disciplina compatible", () => {
+    expect(isPackEligible(pack({}), "disc1", date)).toBe(true);
+    expect(isPackEligible(pack({ productDisciplineId: "disc1" }), "disc1", date)).toBe(true);
   });
-  it("rechaza vencidos, agotados, cancelados, sin saldo o de otra actividad", () => {
-    expect(isPackEligible(pack({ expiresAtYMD: "2026-07-24" }), "act1", date)).toBe(false);
-    expect(isPackEligible(pack({ status: "AGOTADO" }), "act1", date)).toBe(false);
-    expect(isPackEligible(pack({ status: "VENCIDO" }), "act1", date)).toBe(false);
-    expect(isPackEligible(pack({ status: "CANCELADO" }), "act1", date)).toBe(false);
-    expect(isPackEligible(pack({ balance: 0 }), "act1", date)).toBe(false);
-    expect(isPackEligible(pack({ productActivityId: "otra" }), "act1", date)).toBe(false);
+  it("rechaza vencidos, agotados, cancelados, sin saldo o de otra disciplina", () => {
+    expect(isPackEligible(pack({ expiresAtYMD: "2026-07-24" }), "disc1", date)).toBe(false);
+    expect(isPackEligible(pack({ status: "AGOTADO" }), "disc1", date)).toBe(false);
+    expect(isPackEligible(pack({ status: "VENCIDO" }), "disc1", date)).toBe(false);
+    expect(isPackEligible(pack({ status: "CANCELADO" }), "disc1", date)).toBe(false);
+    expect(isPackEligible(pack({ balance: 0 }), "disc1", date)).toBe(false);
+    expect(isPackEligible(pack({ productDisciplineId: "otra" }), "disc1", date)).toBe(false);
   });
   it("rechaza packs que todavía no empezaron", () => {
-    expect(isPackEligible(pack({ startDateYMD: "2026-07-26" }), "act1", date)).toBe(false);
+    expect(isPackEligible(pack({ startDateYMD: "2026-07-26" }), "disc1", date)).toBe(false);
   });
   it("acepta el pack el mismo día del vencimiento", () => {
-    expect(isPackEligible(pack({ expiresAtYMD: date }), "act1", date)).toBe(true);
+    expect(isPackEligible(pack({ expiresAtYMD: date }), "disc1", date)).toBe(true);
   });
 });
 
@@ -80,17 +80,17 @@ describe("pickPackFIFO (elección del pack a debitar)", () => {
   it("elige el que vence antes", () => {
     const a = pack({ id: "a", expiresAtYMD: "2026-09-01" });
     const b = pack({ id: "b", expiresAtYMD: "2026-08-01" });
-    expect(pickPackFIFO([a, b], "act1", date)?.id).toBe("b");
+    expect(pickPackFIFO([a, b], "disc1", date)?.id).toBe("b");
   });
   it("a igual vencimiento, el comprado antes", () => {
     const a = pack({ id: "a", createdAt: new Date("2026-07-02T00:00:00Z") });
     const b = pack({ id: "b", createdAt: new Date("2026-07-01T00:00:00Z") });
-    expect(pickPackFIFO([a, b], "act1", date)?.id).toBe("b");
+    expect(pickPackFIFO([a, b], "disc1", date)?.id).toBe("b");
   });
   it("ignora los no elegibles y devuelve null si no hay ninguno", () => {
     const vencido = pack({ id: "v", expiresAtYMD: "2026-07-01" });
-    const otra = pack({ id: "o", productActivityId: "otraAct" });
-    expect(pickPackFIFO([vencido, otra], "act1", date)).toBeNull();
+    const otra = pack({ id: "o", productDisciplineId: "otraDisc" });
+    expect(pickPackFIFO([vencido, otra], "disc1", date)).toBeNull();
   });
 });
 
