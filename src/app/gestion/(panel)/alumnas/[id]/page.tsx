@@ -1,8 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { prisma } from "@/server/db";
 import { requirePageUser } from "@/server/auth/require-user";
 import { getStudentDetail } from "@/server/queries";
-import { dateToYMD, formatARS, formatDateTimeAR, formatYMD, todayYMD } from "@/lib/dates";
+import {
+  WEEKDAY_LABELS,
+  dateToYMD,
+  formatARS,
+  formatDateTimeAR,
+  formatYMD,
+  todayYMD,
+} from "@/lib/dates";
 import { sumBalance } from "@/lib/policy";
 import {
   ALERT_TYPE_LABEL,
@@ -20,6 +28,11 @@ import {
 } from "@/components/ui";
 import { AlertForm, AlertToggle } from "./alert-form";
 import { CorrectionForm } from "./correction-form";
+import {
+  EnrollForm,
+  PreferredScheduleForm,
+  ToggleEnrollmentForm,
+} from "./enrollment-forms";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +46,20 @@ export default async function FichaAlumnaPage({
   const detail = await getStudentDetail(id, user.role);
   if (!detail) notFound();
   const { student, ledger, auditEvents } = detail;
+
+  // Disciplinas activas con sus horarios activos: opciones de inscripción
+  // y de horario habitual (las profesoras solo pueden asignar los propios).
+  const activeDisciplines = await prisma.discipline.findMany({
+    where: { active: true },
+    include: {
+      activities: {
+        where: { active: true },
+        include: { teacher: { select: { id: true, name: true } } },
+        orderBy: [{ weekday: "asc" }, { startTime: "asc" }],
+      },
+    },
+    orderBy: { name: "asc" },
+  });
 
   const today = todayYMD();
   const isAdmin = user.role === "ADMIN";
@@ -165,6 +192,86 @@ export default async function FichaAlumnaPage({
           </div>
         </Card>
       </div>
+
+      {/* Actividades e inscripciones */}
+      <section>
+        <h2 className="mb-2 font-medium">Actividades e inscripciones</h2>
+        <div className="space-y-2">
+          {student.enrollments.length === 0 ? (
+            <EmptyState title="Sin inscripciones todavía." />
+          ) : (
+            student.enrollments.map((e) => {
+              const disciplineSchedules =
+                activeDisciplines.find((d) => d.id === e.disciplineId)?.activities ??
+                [];
+              const options = disciplineSchedules
+                .filter((a) => isAdmin || a.teacher?.id === user.id)
+                .map((a) => ({
+                  id: a.id,
+                  label: `${WEEKDAY_LABELS[a.weekday]} ${a.startTime}${a.teacher ? ` — ${a.teacher.name}` : ""}`,
+                }));
+              return (
+                <Card key={e.id} className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-medium">
+                      {e.discipline.name}
+                      {!e.discipline.active && (
+                        <span className="ml-2 text-xs text-tinta-suave">
+                          (disciplina inactiva)
+                        </span>
+                      )}
+                    </p>
+                    <Badge tone={e.active ? "exito" : "neutral"}>
+                      {e.active ? "Inscripta" : "Inscripción inactiva"}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-tinta-suave">
+                    {e.preferredActivity
+                      ? `Horario habitual: ${WEEKDAY_LABELS[e.preferredActivity.weekday]} ${e.preferredActivity.startTime}` +
+                        (e.preferredActivity.teacher
+                          ? ` · Profe: ${e.preferredActivity.teacher.name}`
+                          : "") +
+                        (!e.preferredActivity.active ? " (horario desactivado)" : "")
+                      : "Horario habitual pendiente de confirmación"}
+                  </p>
+                  {e.active && (
+                    <PreferredScheduleForm
+                      enrollmentId={e.id}
+                      studentId={student.id}
+                      current={e.preferredActivity?.id ?? null}
+                      options={options}
+                      canClear={isAdmin}
+                    />
+                  )}
+                  {isAdmin && (
+                    <ToggleEnrollmentForm
+                      enrollmentId={e.id}
+                      studentId={student.id}
+                      active={e.active}
+                    />
+                  )}
+                </Card>
+              );
+            })
+          )}
+          {isAdmin && (
+            <Card>
+              <h3 className="mb-2 text-sm font-medium">Inscribir en una disciplina</h3>
+              <EnrollForm
+                studentId={student.id}
+                disciplines={activeDisciplines
+                  .filter(
+                    (d) =>
+                      !student.enrollments.some(
+                        (e) => e.disciplineId === d.id && e.active,
+                      ),
+                  )
+                  .map((d) => ({ id: d.id, name: d.name }))}
+              />
+            </Card>
+          )}
+        </div>
+      </section>
 
       {/* Packs */}
       <section>

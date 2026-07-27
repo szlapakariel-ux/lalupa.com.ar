@@ -22,7 +22,7 @@ export default async function CargarPackPage({
     }),
     prisma.packProduct.findMany({
       where: { active: true },
-      include: { activity: { select: { name: true } } },
+      include: { discipline: { select: { name: true } } },
       orderBy: { classCount: "asc" },
     }),
   ]);
@@ -48,7 +48,7 @@ export default async function CargarPackPage({
             today={todayYMD()}
             products={products.map((p) => ({
               id: p.id,
-              name: p.activity ? `${p.name} (${p.activity.name})` : p.name,
+              name: p.discipline ? `${p.name} (${p.discipline.name})` : p.name,
               classCount: p.classCount,
               referencePrice: Number(p.referencePrice),
               validityDays: p.validityDays,
