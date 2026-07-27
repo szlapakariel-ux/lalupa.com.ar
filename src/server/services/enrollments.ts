@@ -30,6 +30,35 @@ function requireAdmin(role: Role, message: string) {
   if (role !== "ADMIN") throw new DomainError("NO_AUTORIZADO", message);
 }
 
+type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/**
+ * ¿El horario habitual guardado sigue siendo válido? Debe existir, estar
+ * activo, pertenecer a la disciplina de la inscripción y a una disciplina
+ * activa. (null se considera válido: significa "pendiente".)
+ */
+async function preferredStillValid(
+  tx: Tx,
+  preferredActivityId: string | null,
+  disciplineId?: string,
+): Promise<boolean> {
+  if (preferredActivityId === null) return true;
+  const activity = await tx.activity.findUnique({
+    where: { id: preferredActivityId },
+    select: {
+      active: true,
+      disciplineId: true,
+      discipline: { select: { active: true } },
+    },
+  });
+  return Boolean(
+    activity &&
+      activity.active &&
+      activity.discipline.active &&
+      (disciplineId === undefined || activity.disciplineId === disciplineId),
+  );
+}
+
 export async function enrollStudent(input: EnrollInput) {
   requireAdmin(input.userRole, "Solo administradoras pueden inscribir alumnas.");
   return prisma.$transaction(async (tx) => {
@@ -60,10 +89,20 @@ export async function enrollStudent(input: EnrollInput) {
     }
 
     if (existing) {
-      // Reactivación: se reutiliza la misma inscripción.
+      // Reactivación: se reutiliza la misma inscripción. Si el horario
+      // habitual guardado quedó obsoleto (horario inactivo o disciplina
+      // inactiva), vuelve a "pendiente" en lugar de reactivarse roto.
+      const preferredOk = await preferredStillValid(
+        tx,
+        existing.preferredActivityId,
+        existing.disciplineId,
+      );
       const reactivated = await tx.studentDisciplineEnrollment.update({
         where: { id: existing.id },
-        data: { active: true },
+        data: {
+          active: true,
+          preferredActivityId: preferredOk ? existing.preferredActivityId : null,
+        },
       });
       await audit(tx, {
         userId: input.userId,
@@ -108,11 +147,17 @@ export async function setPreferredSchedule(input: PreferredScheduleInput) {
   return prisma.$transaction(async (tx) => {
     const enrollment = await tx.studentDisciplineEnrollment.findUnique({
       where: { id: input.enrollmentId },
-      include: { discipline: { select: { id: true, name: true } } },
+      include: { discipline: { select: { id: true, name: true, active: true } } },
     });
     if (!enrollment) throw new DomainError("NO_ENCONTRADO", "Inscripción inexistente.");
     if (!enrollment.active) {
       throw new DomainError("DATO_INVALIDO", "La inscripción está desactivada.");
+    }
+    if (!enrollment.discipline.active) {
+      throw new DomainError(
+        "DATO_INVALIDO",
+        `La disciplina ${enrollment.discipline.name} está desactivada.`,
+      );
     }
 
     if (input.activityId === null) {
@@ -205,7 +250,11 @@ export async function deactivateEnrollment(input: EnrollmentToggleInput) {
   });
 }
 
-/** Reactiva una inscripción existente (misma fila, mismo id). */
+/**
+ * Reactiva una inscripción existente (misma fila, mismo id). Si el horario
+ * habitual guardado quedó obsoleto (inactivo, de otra disciplina o de una
+ * disciplina inactiva), se reactiva con horario pendiente (null).
+ */
 export async function reactivateEnrollment(input: EnrollmentToggleInput) {
   requireAdmin(input.userRole, "Solo administradoras pueden reactivar inscripciones.");
   return prisma.$transaction(async (tx) => {
@@ -215,9 +264,17 @@ export async function reactivateEnrollment(input: EnrollmentToggleInput) {
     if (!enrollment) throw new DomainError("NO_ENCONTRADO", "Inscripción inexistente.");
     if (enrollment.active) return enrollment;
 
+    const preferredOk = await preferredStillValid(
+      tx,
+      enrollment.preferredActivityId,
+      enrollment.disciplineId,
+    );
     const updated = await tx.studentDisciplineEnrollment.update({
       where: { id: enrollment.id },
-      data: { active: true },
+      data: {
+        active: true,
+        preferredActivityId: preferredOk ? enrollment.preferredActivityId : null,
+      },
     });
     await audit(tx, {
       userId: input.userId,

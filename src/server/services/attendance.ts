@@ -67,7 +67,7 @@ export async function registerAttendance(
           active: true,
           weekday: true,
           disciplineId: true,
-          discipline: { select: { id: true, name: true } },
+          discipline: { select: { id: true, name: true, active: true } },
         },
       }),
       getSettings(tx),
@@ -76,6 +76,14 @@ export async function registerAttendance(
     if (!activity) throw new DomainError("NO_ENCONTRADO", "Horario inexistente.");
     if (!activity.active) {
       throw new DomainError("DATO_INVALIDO", "El horario está desactivado.");
+    }
+    // La disciplina también debe estar activa: un horario jamás es operativo
+    // dentro de una disciplina desactivada.
+    if (!activity.discipline.active) {
+      throw new DomainError(
+        "DATO_INVALIDO",
+        `La disciplina ${activity.discipline.name} está desactivada.`,
+      );
     }
 
     // La fecha debe caer en el día de la semana del horario elegido.
@@ -121,13 +129,23 @@ export async function registerAttendance(
         packId = pick.id;
         packName = packs.find((p) => p.id === pick.id)?.productName ?? null;
       } else if (input.allowNegative) {
-        // Acción administrativa explícita: se debita el pack más reciente
-        // no cancelado, dejándolo en saldo negativo.
+        // Acción administrativa explícita: se debita en negativo el pack
+        // COMPATIBLE más reciente no cancelado. Compatible = genérico
+        // (disciplina null) o de la MISMA disciplina de la clase; un pack
+        // específico de otra disciplina jamás se debita.
         const fallback = packs
-          .filter((p) => p.status !== "CANCELADO")
+          .filter(
+            (p) =>
+              p.status !== "CANCELADO" &&
+              (p.productDisciplineId === null ||
+                p.productDisciplineId === activity.disciplineId),
+          )
           .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
         if (!fallback) {
-          throw new DomainError("SIN_SALDO", "La alumna no tiene ningún pack cargado.");
+          throw new DomainError(
+            "SIN_SALDO",
+            "La alumna no tiene ningún pack genérico ni de esta disciplina.",
+          );
         }
         packId = fallback.id;
         packName = fallback.productName;

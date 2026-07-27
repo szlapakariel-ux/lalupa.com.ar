@@ -33,6 +33,7 @@ function requireAdmin(role: Role) {
 export interface DisciplineInput {
   name: string;
   description?: string;
+  active?: boolean;
   userId: string;
   userRole: Role;
   ip?: string;
@@ -49,15 +50,17 @@ export async function createDiscipline(input: DisciplineInput) {
     if (existing) {
       throw new DomainError("NOMBRE_DUPLICADO", "Ya existe una disciplina con ese nombre.");
     }
+    // La casilla "activa" del formulario se respeta también al crear.
+    const active = input.active ?? true;
     const discipline = await tx.discipline.create({
-      data: { name, normalizedName, description: input.description ?? null },
+      data: { name, normalizedName, description: input.description ?? null, active },
     });
     await audit(tx, {
       userId: input.userId,
       action: "discipline.create",
       entity: "Discipline",
       entityId: discipline.id,
-      metadata: { name },
+      metadata: { name, active },
       ip: input.ip,
     });
     return discipline;
@@ -129,6 +132,12 @@ export async function createSchedule(input: ScheduleInput) {
   return prisma.$transaction(async (tx) => {
     const discipline = await tx.discipline.findUnique({ where: { id: input.disciplineId } });
     if (!discipline) throw new DomainError("NO_ENCONTRADO", "Disciplina inexistente.");
+    if (!discipline.active) {
+      throw new DomainError(
+        "DATO_INVALIDO",
+        "La disciplina está desactivada: no se pueden crear horarios.",
+      );
+    }
 
     const activity = await tx.activity.create({
       data: {
@@ -173,7 +182,7 @@ export async function updateSchedule(
   return prisma.$transaction(async (tx) => {
     const activity = await tx.activity.findUnique({
       where: { id: input.activityId },
-      include: { discipline: { select: { id: true, name: true } } },
+      include: { discipline: { select: { id: true, name: true, active: true } } },
     });
     if (!activity) throw new DomainError("NO_ENCONTRADO", "Horario inexistente.");
 
@@ -184,6 +193,14 @@ export async function updateSchedule(
     });
 
     if (timeChanged && attendanceCount > 0) {
+      const replacementActive = input.active ?? true;
+      // Nunca puede quedar un horario operativo en una disciplina inactiva.
+      if (replacementActive && !activity.discipline.active) {
+        throw new DomainError(
+          "DATO_INVALIDO",
+          "La disciplina está desactivada: el horario de reemplazo no puede quedar activo.",
+        );
+      }
       // Reemplazo trazable: nuevo horario + desactivación del histórico.
       const replacement = await tx.activity.create({
         data: {
@@ -194,17 +211,21 @@ export async function updateSchedule(
           durationMin: input.durationMin,
           capacity: input.capacity ?? null,
           teacherId: input.teacherId ?? null,
-          active: input.active ?? true,
+          active: replacementActive,
         },
       });
       await tx.activity.update({
         where: { id: activity.id },
         data: { active: false },
       });
-      // El "mismo" horario se movió de día/hora: los habituales lo siguen.
-      const moved = await tx.studentDisciplineEnrollment.updateMany({
+      // El "mismo" horario se movió de día/hora: los habituales lo siguen
+      // SOLO si el reemplazo queda activo; si queda inactivo, vuelven a
+      // "pendiente" (null). Nada de esto toca packs, asistencias ni ledger.
+      const repointed = await tx.studentDisciplineEnrollment.updateMany({
         where: { preferredActivityId: activity.id },
-        data: { preferredActivityId: replacement.id },
+        data: {
+          preferredActivityId: replacementActive ? replacement.id : null,
+        },
       });
       await audit(tx, {
         userId: input.userId,
@@ -214,7 +235,9 @@ export async function updateSchedule(
         metadata: {
           disciplineId: activity.discipline.id,
           replacedById: replacement.id,
-          movedPreferred: moved.count,
+          replacementActive,
+          movedPreferred: replacementActive ? repointed.count : 0,
+          clearedPreferred: replacementActive ? 0 : repointed.count,
           weekday: input.weekday,
           startTime: input.startTime,
         },
@@ -223,6 +246,14 @@ export async function updateSchedule(
       return replacement;
     }
 
+    const nextActive = input.active ?? activity.active;
+    // No se puede (re)activar un horario dentro de una disciplina inactiva.
+    if (nextActive && !activity.discipline.active) {
+      throw new DomainError(
+        "DATO_INVALIDO",
+        "La disciplina está desactivada: el horario no puede quedar activo.",
+      );
+    }
     const updated = await tx.activity.update({
       where: { id: activity.id },
       data: {
@@ -231,10 +262,21 @@ export async function updateSchedule(
         durationMin: input.durationMin,
         capacity: input.capacity ?? null,
         teacherId: input.teacherId ?? null,
-        active: input.active ?? activity.active,
+        active: nextActive,
       },
     });
     const deactivated = activity.active && !updated.active;
+    // Un horario que deja de estar activo sin reemplazo no puede seguir
+    // siendo el habitual de nadie: esas inscripciones quedan pendientes
+    // (siguen activas; packs, asistencias y ledger intactos).
+    let clearedPreferred = 0;
+    if (deactivated) {
+      const cleared = await tx.studentDisciplineEnrollment.updateMany({
+        where: { preferredActivityId: activity.id },
+        data: { preferredActivityId: null },
+      });
+      clearedPreferred = cleared.count;
+    }
     await audit(tx, {
       userId: input.userId,
       action: deactivated ? "schedule.deactivate" : "schedule.update",
@@ -245,6 +287,7 @@ export async function updateSchedule(
         weekday: input.weekday,
         startTime: input.startTime,
         active: updated.active,
+        ...(deactivated ? { clearedPreferred } : {}),
       },
       ip: input.ip,
     });

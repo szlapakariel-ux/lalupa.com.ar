@@ -52,6 +52,7 @@ export async function saveDisciplineAction(
       await createDiscipline({
         name: parsed.data.name,
         description: parsed.data.description,
+        active: parsed.data.active,
         userId: user.id,
         userRole: user.role,
         ip: await clientIp(),
@@ -159,6 +160,29 @@ export async function saveProductAction(
     // La compatibilidad se define por DISCIPLINA (null = todas);
     // activityId queda como columna legacy y no se escribe más.
     const data = { ...parsed.data, disciplineId: parsed.data.disciplineId ?? null };
+
+    // Validación server-side de la disciplina elegida: debe existir y, para
+    // ASIGNACIONES NUEVAS (crear, o cambiar a otra disciplina), estar activa.
+    // Conservar la disciplina actual de un producto existente sí se permite
+    // aunque esté inactiva (no se lo convierte silenciosamente en genérico).
+    if (data.disciplineId) {
+      const discipline = await prisma.discipline.findUnique({
+        where: { id: data.disciplineId },
+        select: { id: true, active: true },
+      });
+      if (!discipline) return { error: "La disciplina elegida no existe." };
+      const current = productId
+        ? await prisma.packProduct.findUnique({
+            where: { id: productId },
+            select: { disciplineId: true },
+          })
+        : null;
+      const keepsSame = current?.disciplineId === data.disciplineId;
+      if (!discipline.active && !keepsSame) {
+        return { error: "La disciplina elegida está inactiva; elegí una activa." };
+      }
+    }
+
     const product = productId
       ? await prisma.packProduct.update({ where: { id: productId }, data })
       : await prisma.packProduct.create({ data });
