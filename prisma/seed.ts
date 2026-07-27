@@ -11,7 +11,7 @@
  *    (admin@lalupa.local / lupa-admin-dev). Estas credenciales jamás se
  *    aplican en producción.
  */
-import { PrismaClient, type PackProduct, type Student } from "@prisma/client";
+import { PrismaClient, type Activity, type PackProduct, type Student } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { SeedConfigError, seedProductionAdmin } from "./seed-admin";
 
@@ -67,30 +67,81 @@ async function main() {
     },
   });
 
-  const actividades = [
-    { name: "Yoga", weekday: "LUNES", startTime: "18:30", durationMin: 60, capacity: 10 },
-    { name: "Yoga", weekday: "MIERCOLES", startTime: "19:00", durationMin: 60, capacity: 10 },
-    { name: "Taller de cerámica", weekday: "SABADO", startTime: "10:00", durationMin: 120, capacity: 8 },
-    { name: "Entrenamiento", weekday: "VIERNES", startTime: "09:00", durationMin: 60, capacity: 6 },
+  // Disciplinas con sus horarios. Yoga tiene un horario TODOS los días para
+  // que las pruebas manuales y E2E siempre encuentren una clase "hoy".
+  const normalizar = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+  const WEEKDAYS = [
+    "LUNES",
+    "MARTES",
+    "MIERCOLES",
+    "JUEVES",
+    "VIERNES",
+    "SABADO",
+    "DOMINGO",
+  ] as const;
+  const disciplinas = [
+    {
+      name: "Yoga",
+      horarios: WEEKDAYS.map((weekday) => ({
+        weekday,
+        startTime: "18:30",
+        durationMin: 60,
+        capacity: 10,
+      })),
+    },
+    {
+      name: "Taller de cerámica",
+      horarios: [
+        { weekday: "SABADO", startTime: "10:00", durationMin: 120, capacity: 8 },
+      ],
+    },
+    {
+      name: "Entrenamiento",
+      horarios: [
+        { weekday: "VIERNES", startTime: "09:00", durationMin: 60, capacity: 6 },
+      ],
+    },
   ] as const;
 
-  const acts = [];
-  for (const a of actividades) {
-    const existing = await prisma.activity.findFirst({
-      where: { name: a.name, weekday: a.weekday, startTime: a.startTime },
+  const discByName: Record<string, { id: string; name: string }> = {};
+  const acts: Activity[] = [];
+  for (const d of disciplinas) {
+    const discipline = await prisma.discipline.upsert({
+      where: { normalizedName: normalizar(d.name) },
+      update: {},
+      create: { name: d.name, normalizedName: normalizar(d.name) },
     });
-    acts.push(
-      existing ??
-        (await prisma.activity.create({
-          data: { ...a, teacherId: profe.id },
-        })),
-    );
+    discByName[d.name] = discipline;
+    for (const h of d.horarios) {
+      const existing = await prisma.activity.findFirst({
+        where: { disciplineId: discipline.id, weekday: h.weekday, startTime: h.startTime },
+      });
+      acts.push(
+        existing ??
+          (await prisma.activity.create({
+            data: {
+              ...h,
+              name: discipline.name,
+              disciplineId: discipline.id,
+              teacherId: profe.id,
+            },
+          })),
+      );
+    }
   }
+  const yoga = discByName["Yoga"];
 
   const productos = [
     { name: "Clase suelta", classCount: 1, referencePrice: 12000, validityDays: 15 },
     { name: "Pack x4", classCount: 4, referencePrice: 40000, validityDays: 30 },
     { name: "Pack x8", classCount: 8, referencePrice: 72000, validityDays: 60 },
+    {
+      name: "Pack x4 Cerámica",
+      classCount: 4,
+      referencePrice: 48000,
+      validityDays: 30,
+      disciplineId: discByName["Taller de cerámica"].id,
+    },
   ];
   const prods: PackProduct[] = [];
   for (const p of productos) {
@@ -125,6 +176,41 @@ async function main() {
       where: { firstName: a.firstName, lastName: a.lastName },
     });
     students.push(existing ?? (await prisma.student.create({ data: a })));
+  }
+
+  // Inscripciones de ejemplo (idempotentes): todas en Yoga; dos también en
+  // cerámica. Los horarios habituales quedan mayormente pendientes; María
+  // tiene el lunes 18:30 como habitual para mostrar el caso completo.
+  const yogaLunes = acts.find(
+    (a) => a.disciplineId === yoga.id && a.weekday === "LUNES",
+  );
+  for (const s of students) {
+    await prisma.studentDisciplineEnrollment.upsert({
+      where: {
+        studentId_disciplineId: { studentId: s.id, disciplineId: yoga.id },
+      },
+      update: {},
+      create: {
+        studentId: s.id,
+        disciplineId: yoga.id,
+        preferredActivityId: s.id === students[0].id ? (yogaLunes?.id ?? null) : null,
+      },
+    });
+  }
+  for (const s of [students[2], students[3]]) {
+    await prisma.studentDisciplineEnrollment.upsert({
+      where: {
+        studentId_disciplineId: {
+          studentId: s.id,
+          disciplineId: discByName["Taller de cerámica"].id,
+        },
+      },
+      update: {},
+      create: {
+        studentId: s.id,
+        disciplineId: discByName["Taller de cerámica"].id,
+      },
+    });
   }
 
   // Alertas de ejemplo (una visible para todas, una solo admin)
@@ -211,8 +297,23 @@ async function main() {
     // Bonificado
     await mkPack(5, 0, -2, { payStatus: "BONIFICADO" }); // Julieta, clase suelta
 
-    // Asistencias de las últimas 2 semanas
-    const yoga = acts[0];
+    // Asistencias de las últimas 2 semanas, siempre en el horario de Yoga
+    // cuyo día coincide con la fecha (coherente con la validación real).
+    const WEEKDAY_BY_INDEX = [
+      "DOMINGO",
+      "LUNES",
+      "MARTES",
+      "MIERCOLES",
+      "JUEVES",
+      "VIERNES",
+      "SABADO",
+    ] as const;
+    const yogaDelDia = (date: Date) =>
+      acts.find(
+        (a) =>
+          a.disciplineId === yoga.id &&
+          a.weekday === WEEKDAY_BY_INDEX[date.getUTCDay()],
+      )!;
     const marcar = async (
       studentIdx: number,
       offsetDays: number,
@@ -223,7 +324,7 @@ async function main() {
       const att = await prisma.attendance.create({
         data: {
           date,
-          activityId: yoga.id,
+          activityId: yogaDelDia(date).id,
           studentId: students[studentIdx].id,
           status,
           registeredById: profe.id,

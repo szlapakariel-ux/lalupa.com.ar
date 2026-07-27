@@ -94,14 +94,14 @@ enum AuditResult {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
+  id           String   @id @default(cuid())
+  email        String   @unique
   name         String
   passwordHash String
-  role         Role      @default(TEACHER)
-  active       Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  role         Role     @default(TEACHER)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   sessions              Session[]
   activities            Activity[]
@@ -163,44 +163,98 @@ model Student {
   ledger      LedgerMovement[]
   payments    Payment[]
   alerts      StudentAlert[]
+  enrollments StudentDisciplineEnrollment[]
 
   @@index([status])
   @@index([lastName, firstName])
 }
 
+// Disciplina (ej: "Cerámica", "Ilustración y collage"): agrupa horarios.
+// La fuente funcional del nombre es Discipline; Activity.name se conserva
+// por compatibilidad y refleja siempre Discipline.name.
+model Discipline {
+  id             String   @id @default(cuid())
+  name           String
+  // trim + espacios colapsados + minúsculas; unicidad SIN fusiones difusas
+  // ("Ceramica" y "Cerámica" son disciplinas distintas a propósito).
+  normalizedName String   @unique
+  description    String?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  activities   Activity[]
+  enrollments  StudentDisciplineEnrollment[]
+  packProducts PackProduct[]
+}
+
+// Un horario recurrente concreto de UNA disciplina (día + hora + profesora
+// + cupo). Históricamente esta tabla también llevaba el nombre; name queda
+// como espejo de Discipline.name hasta poder eliminarse.
 model Activity {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  teacherId   String?
-  teacher     User?    @relation(fields: [teacherId], references: [id])
-  weekday     Weekday
+  id           String     @id @default(cuid())
+  name         String
+  disciplineId String
+  discipline   Discipline @relation(fields: [disciplineId], references: [id])
+  description  String?
+  teacherId    String?
+  teacher      User?      @relation(fields: [teacherId], references: [id])
+  weekday      Weekday
   // "HH:mm" en hora local argentina; sin timezone no hay ambigüedad
-  startTime   String
-  durationMin Int      @default(60)
-  capacity    Int?
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  startTime    String
+  durationMin  Int        @default(60)
+  capacity     Int?
+  active       Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   attendances Attendance[]
   products    PackProduct[]
+  preferredBy StudentDisciplineEnrollment[] @relation("preferredActivity")
 
   @@index([weekday, active])
+  @@index([disciplineId, active])
+}
+
+// Inscripción de una alumna en una disciplina. Puede existir sin horario
+// habitual (preferredActivityId null). Crear/editar la inscripción JAMÁS
+// consume clases ni modifica asistencias históricas.
+model StudentDisciplineEnrollment {
+  id                  String     @id @default(cuid())
+  studentId           String
+  student             Student    @relation(fields: [studentId], references: [id])
+  disciplineId        String
+  discipline          Discipline @relation(fields: [disciplineId], references: [id])
+  // Horario habitual opcional; debe pertenecer a la misma disciplina y
+  // estar activo al momento de asignarlo.
+  preferredActivityId String?
+  preferredActivity   Activity?  @relation("preferredActivity", fields: [preferredActivityId], references: [id])
+  active              Boolean    @default(true)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  @@unique([studentId, disciplineId])
+  @@index([disciplineId, active])
+  @@index([preferredActivityId])
 }
 
 model PackProduct {
-  id             String    @id @default(cuid())
+  id             String      @id @default(cuid())
   name           String
   classCount     Int
-  referencePrice Decimal   @db.Decimal(10, 2)
+  referencePrice Decimal     @db.Decimal(10, 2)
   validityDays   Int
-  // null = aplica a cualquier actividad
+  // LEGACY: la compatibilidad ya NO se decide por horario. Se conserva la
+  // columna hasta una migración futura; la app no la usa más.
   activityId     String?
-  activity       Activity? @relation(fields: [activityId], references: [id])
-  active         Boolean   @default(true)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  activity       Activity?   @relation(fields: [activityId], references: [id])
+  // null = el pack aplica a TODAS las disciplinas; con valor, a cualquier
+  // horario de esa disciplina.
+  disciplineId   String?
+  discipline     Discipline? @relation(fields: [disciplineId], references: [id])
+  active         Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   studentPacks StudentPack[]
 }
@@ -258,25 +312,25 @@ model Attendance {
 // INMUTABLE: solo se insertan filas; jamás UPDATE ni DELETE.
 // Una corrección o reversión es SIEMPRE un movimiento nuevo compensatorio.
 model LedgerMovement {
-  id            String       @id @default(cuid())
+  id            String          @id @default(cuid())
   studentId     String
-  student       Student      @relation(fields: [studentId], references: [id])
+  student       Student         @relation(fields: [studentId], references: [id])
   studentPackId String?
-  studentPack   StudentPack? @relation(fields: [studentPackId], references: [id])
+  studentPack   StudentPack?    @relation(fields: [studentPackId], references: [id])
   type          LedgerType
   // + acredita clases, - debita clases
   delta         Int
   attendanceId  String?
-  attendance    Attendance?  @relation(fields: [attendanceId], references: [id])
+  attendance    Attendance?     @relation(fields: [attendanceId], references: [id])
   paymentId     String?
   // Un movimiento puede revertirse a lo sumo UNA vez (unique)
-  reversalOfId  String?      @unique
+  reversalOfId  String?         @unique
   reversalOf    LedgerMovement? @relation("reversal", fields: [reversalOfId], references: [id])
   reversedBy    LedgerMovement? @relation("reversal")
   note          String?
   createdById   String
-  createdBy     User         @relation(fields: [createdById], references: [id])
-  createdAt     DateTime     @default(now())
+  createdBy     User            @relation(fields: [createdById], references: [id])
+  createdAt     DateTime        @default(now())
 
   @@index([studentPackId])
   @@index([studentId, createdAt])
@@ -298,11 +352,11 @@ model Payment {
   createdById   String
   createdBy     User          @relation("paymentCreator", fields: [createdById], references: [id])
   // Anulación soft: nunca se borra un pago
-  annulledAt   DateTime?
-  annulledById String?
-  annulledBy   User?          @relation("paymentAnnuller", fields: [annulledById], references: [id])
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  annulledAt    DateTime?
+  annulledById  String?
+  annulledBy    User?         @relation("paymentAnnuller", fields: [annulledById], references: [id])
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   @@index([studentId, date])
   @@index([status])
@@ -330,19 +384,19 @@ model StudentAlert {
 }
 
 model AuditEvent {
-  id       String      @id @default(cuid())
-  userId   String?
-  user     User?       @relation(fields: [userId], references: [id])
+  id        String      @id @default(cuid())
+  userId    String?
+  user      User?       @relation(fields: [userId], references: [id])
   // ej: "attendance.register", "pack.assign", "auth.login"
-  action   String
-  entity   String
-  entityId String?
-  result   AuditResult @default(OK)
+  action    String
+  entity    String
+  entityId  String?
+  result    AuditResult @default(OK)
   // Metadatos con whitelist explícita: jamás contraseñas, tokens ni
   // contenido de alertas médicas.
-  metadata Json?
-  ip       String?
-  createdAt DateTime   @default(now())
+  metadata  Json?
+  ip        String?
+  createdAt DateTime    @default(now())
 
   @@index([entity, entityId])
   @@index([userId, createdAt])
