@@ -129,7 +129,7 @@ export default async function DashboardPage() {
                     </p>
                   </div>
                   <Link
-                    href={`/gestion/asistencia?actividad=${a.id}&fecha=${today}`}
+                    href={`/gestion/asistencia?fecha=${today}&disciplina=${a.disciplineId}&horario=${a.id}`}
                     className="shrink-0 rounded-lg bg-tinta px-3 py-2 text-sm text-crema"
                   >
                     Tomar lista
