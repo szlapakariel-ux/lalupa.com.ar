@@ -62,14 +62,20 @@ export interface PackForSelection {
   /** "YYYY-MM-DD" */
   startDateYMD: string;
   createdAt: Date;
-  /** null = el producto aplica a cualquier actividad */
-  productActivityId: string | null;
+  /** null = el producto aplica a TODAS las disciplinas */
+  productDisciplineId: string | null;
   balance: number;
 }
 
+/**
+ * Un pack es elegible para una clase de una disciplina si está activo, con
+ * saldo, vigente a la fecha, y es genérico (disciplina null) o pertenece a
+ * ESA disciplina. El horario concreto (Activity) ya no importa: cualquier
+ * horario de la disciplina sirve.
+ */
 export function isPackEligible(
   pack: PackForSelection,
-  activityId: string,
+  disciplineId: string,
   dateYMD: string,
 ): boolean {
   return (
@@ -77,20 +83,22 @@ export function isPackEligible(
     pack.balance > 0 &&
     pack.expiresAtYMD >= dateYMD &&
     pack.startDateYMD <= dateYMD &&
-    (pack.productActivityId === null || pack.productActivityId === activityId)
+    (pack.productDisciplineId === null || pack.productDisciplineId === disciplineId)
   );
 }
 
 /**
- * Elige el pack a debitar: entre los elegibles, primero el que vence antes;
- * a igual vencimiento, el comprado antes (FIFO).
+ * POLÍTICA VIGENTE (preexistente, se conserva sin cambios) para elegir el
+ * pack a debitar cuando hay varios compatibles: entre los elegibles,
+ * primero el que vence antes; a igual vencimiento, el comprado antes
+ * (FIFO por vencimiento). No distingue packs genéricos de específicos.
  */
 export function pickPackFIFO(
   packs: ReadonlyArray<PackForSelection>,
-  activityId: string,
+  disciplineId: string,
   dateYMD: string,
 ): PackForSelection | null {
-  const eligible = packs.filter((p) => isPackEligible(p, activityId, dateYMD));
+  const eligible = packs.filter((p) => isPackEligible(p, disciplineId, dateYMD));
   if (eligible.length === 0) return null;
   return [...eligible].sort(
     (a, b) =>

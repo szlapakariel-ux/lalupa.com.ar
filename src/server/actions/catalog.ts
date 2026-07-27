@@ -6,14 +6,67 @@ import type { ActionState } from "@/lib/action-state";
 import { prisma } from "@/server/db";
 import { requireUser, clientIp } from "@/server/auth/require-user";
 import { audit } from "@/server/services/audit";
+import {
+  createDiscipline,
+  createSchedule,
+  updateDiscipline,
+  updateSchedule,
+} from "@/server/services/disciplines";
 import { runAction, str, optional } from "./helpers";
 
-/* ── Actividades ─────────────────────────────────────────────────────────── */
+/* ── Disciplinas ─────────────────────────────────────────────────────────── */
 
-const activitySchema = z.object({
+const disciplineSchema = z.object({
   name: z.string().min(1, "Nombre requerido").max(80),
   description: z.string().max(300).optional(),
-  teacherId: z.string().optional(),
+  active: z.boolean(),
+});
+
+export async function saveDisciplineAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await requireUser("ADMIN");
+    const disciplineId = optional(str(formData, "disciplineId"));
+    const parsed = disciplineSchema.safeParse({
+      name: str(formData, "name"),
+      description: optional(str(formData, "description")),
+      active: str(formData, "active") === "true",
+    });
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
+    }
+
+    if (disciplineId) {
+      await updateDiscipline({
+        disciplineId,
+        name: parsed.data.name,
+        description: parsed.data.description,
+        active: parsed.data.active,
+        userId: user.id,
+        userRole: user.role,
+        ip: await clientIp(),
+      });
+    } else {
+      await createDiscipline({
+        name: parsed.data.name,
+        description: parsed.data.description,
+        userId: user.id,
+        userRole: user.role,
+        ip: await clientIp(),
+      });
+    }
+    revalidatePath("/gestion/actividades");
+    revalidatePath("/gestion/productos");
+    return { success: disciplineId ? "Disciplina actualizada." : "Disciplina creada." };
+  });
+}
+
+/* ── Horarios ────────────────────────────────────────────────────────────── */
+
+const scheduleSchema = z.object({
+  disciplineId: z.string().min(1),
   weekday: z.enum([
     "LUNES",
     "MARTES",
@@ -26,47 +79,50 @@ const activitySchema = z.object({
   startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Horario inválido (HH:MM)"),
   durationMin: z.coerce.number().int().min(15).max(480),
   capacity: z.coerce.number().int().min(1).max(200).optional(),
+  teacherId: z.string().optional(),
   active: z.boolean(),
 });
 
-function parseActivity(formData: FormData) {
-  return activitySchema.safeParse({
-    name: str(formData, "name"),
-    description: optional(str(formData, "description")),
-    teacherId: optional(str(formData, "teacherId")),
-    weekday: str(formData, "weekday"),
-    startTime: str(formData, "startTime"),
-    durationMin: str(formData, "durationMin") || "60",
-    capacity: optional(str(formData, "capacity")),
-    active: str(formData, "active") === "true",
-  });
-}
-
-export async function saveActivityAction(
+export async function saveScheduleAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
   return runAction(async () => {
     const user = await requireUser("ADMIN");
     const activityId = optional(str(formData, "activityId"));
-    const parsed = parseActivity(formData);
+    const parsed = scheduleSchema.safeParse({
+      disciplineId: str(formData, "disciplineId"),
+      weekday: str(formData, "weekday"),
+      startTime: str(formData, "startTime"),
+      durationMin: str(formData, "durationMin") || "60",
+      capacity: optional(str(formData, "capacity")),
+      teacherId: optional(str(formData, "teacherId")),
+      active: str(formData, "active") === "true",
+    });
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
     }
-    const data = { ...parsed.data, teacherId: parsed.data.teacherId ?? null, capacity: parsed.data.capacity ?? null };
-    const activity = activityId
-      ? await prisma.activity.update({ where: { id: activityId }, data })
-      : await prisma.activity.create({ data });
-    await audit(prisma, {
+
+    const common = {
+      disciplineId: parsed.data.disciplineId,
+      weekday: parsed.data.weekday,
+      startTime: parsed.data.startTime,
+      durationMin: parsed.data.durationMin,
+      capacity: parsed.data.capacity ?? null,
+      teacherId: parsed.data.teacherId ?? null,
+      active: parsed.data.active,
       userId: user.id,
-      action: activityId ? "activity.update" : "activity.create",
-      entity: "Activity",
-      entityId: activity.id,
-      metadata: { name: data.name, weekday: data.weekday, active: data.active },
+      userRole: user.role,
       ip: await clientIp(),
-    });
+    };
+    if (activityId) {
+      await updateSchedule({ ...common, activityId });
+    } else {
+      await createSchedule(common);
+    }
     revalidatePath("/gestion/actividades");
-    return { success: activityId ? "Actividad actualizada." : "Actividad creada." };
+    revalidatePath("/gestion/asistencia");
+    return { success: activityId ? "Horario actualizado." : "Horario creado." };
   });
 }
 
@@ -77,7 +133,8 @@ const productSchema = z.object({
   classCount: z.coerce.number().int().min(1).max(200),
   referencePrice: z.coerce.number().min(0).max(100_000_000),
   validityDays: z.coerce.number().int().min(1).max(730),
-  activityId: z.string().optional(),
+  // "" = todas las disciplinas (disciplineId null)
+  disciplineId: z.string().optional(),
   active: z.boolean(),
 });
 
@@ -93,13 +150,15 @@ export async function saveProductAction(
       classCount: str(formData, "classCount"),
       referencePrice: str(formData, "referencePrice"),
       validityDays: str(formData, "validityDays"),
-      activityId: optional(str(formData, "activityId")),
+      disciplineId: optional(str(formData, "disciplineId")),
       active: str(formData, "active") === "true",
     });
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
     }
-    const data = { ...parsed.data, activityId: parsed.data.activityId ?? null };
+    // La compatibilidad se define por DISCIPLINA (null = todas);
+    // activityId queda como columna legacy y no se escribe más.
+    const data = { ...parsed.data, disciplineId: parsed.data.disciplineId ?? null };
     const product = productId
       ? await prisma.packProduct.update({ where: { id: productId }, data })
       : await prisma.packProduct.create({ data });
@@ -112,6 +171,7 @@ export async function saveProductAction(
         name: data.name,
         classCount: data.classCount,
         validityDays: data.validityDays,
+        disciplineId: data.disciplineId,
         active: data.active,
       },
       ip: await clientIp(),

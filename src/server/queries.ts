@@ -126,7 +126,7 @@ export async function getStudentDetail(studentId: string, role: Role) {
     include: {
       packs: {
         include: {
-          product: { select: { name: true, activityId: true } },
+          product: { select: { name: true, disciplineId: true } },
           ledger: { select: { delta: true, type: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -134,6 +134,21 @@ export async function getStudentDetail(studentId: string, role: Role) {
       alerts: {
         where: { ...alertVisibilityFilter(role) },
         orderBy: [{ active: "desc" }, { createdAt: "desc" }],
+      },
+      enrollments: {
+        include: {
+          discipline: { select: { id: true, name: true, active: true } },
+          preferredActivity: {
+            select: {
+              id: true,
+              weekday: true,
+              startTime: true,
+              active: true,
+              teacher: { select: { name: true } },
+            },
+          },
+        },
+        orderBy: [{ active: "desc" }, { createdAt: "asc" }],
       },
       attendances: {
         include: {

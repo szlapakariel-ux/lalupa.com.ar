@@ -1,7 +1,7 @@
 import { Prisma, type AttendanceStatus, type Role } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { DomainError } from "@/lib/errors";
-import { isValidYMD, ymdToDate } from "@/lib/dates";
+import { WEEKDAY_LABELS, isValidYMD, weekdayOfYMD, ymdToDate } from "@/lib/dates";
 import { consumesClass, pickPackFIFO } from "@/lib/policy";
 import { audit } from "./audit";
 import { availableBalance, computeBalance, packsWithBalances } from "./ledger";
@@ -61,24 +61,62 @@ export async function registerAttendance(
       }),
       tx.activity.findUnique({
         where: { id: input.activityId },
-        select: { id: true, name: true },
+        select: {
+          id: true,
+          name: true,
+          active: true,
+          weekday: true,
+          disciplineId: true,
+          discipline: { select: { id: true, name: true } },
+        },
       }),
       getSettings(tx),
     ]);
     if (!student) throw new DomainError("NO_ENCONTRADO", "Alumna inexistente.");
-    if (!activity) throw new DomainError("NO_ENCONTRADO", "Actividad inexistente.");
+    if (!activity) throw new DomainError("NO_ENCONTRADO", "Horario inexistente.");
+    if (!activity.active) {
+      throw new DomainError("DATO_INVALIDO", "El horario está desactivado.");
+    }
+
+    // La fecha debe caer en el día de la semana del horario elegido.
+    if (weekdayOfYMD(input.dateYMD) !== activity.weekday) {
+      const dia = WEEKDAY_LABELS[activity.weekday].toLowerCase();
+      throw new DomainError(
+        "FECHA_NO_COINCIDE",
+        `El horario seleccionado corresponde a ${dia}. Elegí una fecha de ${dia}.`,
+      );
+    }
+
+    // La alumna debe tener inscripción ACTIVA en la disciplina del horario.
+    // (El horario habitual NO es obligatorio: cualquier horario de la misma
+    // disciplina sirve, y registrar acá nunca modifica el habitual.)
+    const enrollment = await tx.studentDisciplineEnrollment.findUnique({
+      where: {
+        studentId_disciplineId: {
+          studentId: input.studentId,
+          disciplineId: activity.disciplineId,
+        },
+      },
+      select: { id: true, active: true },
+    });
+    if (!enrollment || !enrollment.active) {
+      throw new DomainError(
+        "SIN_INSCRIPCION",
+        `La alumna no tiene inscripción activa en ${activity.discipline.name}.`,
+      );
+    }
 
     const consumed = consumesClass(settings, input.status);
 
     // Lock de packs solo cuando vamos a debitar.
     const packs = await packsWithBalances(tx, input.studentId, { lock: consumed });
-    const balanceBefore = availableBalance(packs, input.activityId, input.dateYMD);
+    const balanceBefore = availableBalance(packs, activity.disciplineId, input.dateYMD);
 
     let packId: string | null = null;
     let packName: string | null = null;
 
     if (consumed) {
-      const pick = pickPackFIFO(packs, input.activityId, input.dateYMD);
+      const pick = pickPackFIFO(packs, activity.disciplineId, input.dateYMD);
       if (pick) {
         packId = pick.id;
         packName = packs.find((p) => p.id === pick.id)?.productName ?? null;
@@ -149,6 +187,7 @@ export async function registerAttendance(
       metadata: {
         studentId: input.studentId,
         activityId: input.activityId,
+        disciplineId: activity.disciplineId,
         date: input.dateYMD,
         status: input.status,
         consumed,

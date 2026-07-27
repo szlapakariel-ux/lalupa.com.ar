@@ -34,7 +34,7 @@ export async function packsWithBalances(
   const packs = await tx.studentPack.findMany({
     where: { studentId },
     include: {
-      product: { select: { name: true, activityId: true } },
+      product: { select: { name: true, disciplineId: true } },
       ledger: { select: { delta: true } },
     },
     orderBy: [{ expiresAt: "asc" }, { createdAt: "asc" }],
@@ -45,7 +45,7 @@ export async function packsWithBalances(
     expiresAtYMD: dateToYMD(p.expiresAt),
     startDateYMD: dateToYMD(p.startDate),
     createdAt: p.createdAt,
-    productActivityId: p.product.activityId,
+    productDisciplineId: p.product.disciplineId,
     balance: sumBalance(p.ledger),
     productName: p.product.name,
     classCount: p.classCount,
@@ -53,18 +53,20 @@ export async function packsWithBalances(
 }
 
 /**
- * Clases disponibles de una alumna para una actividad y fecha dadas
- * (solo packs elegibles: activos, vigentes y compatibles).
+ * Clases disponibles de una alumna para una disciplina y fecha dadas
+ * (solo packs elegibles: activos, vigentes y compatibles con la
+ * disciplina — genéricos incluidos). Con disciplineId null suma todos los
+ * packs vigentes con saldo.
  */
 export function availableBalance(
   packs: PackWithBalance[],
-  activityId: string | null,
+  disciplineId: string | null,
   dateYMD: string = todayYMD(),
 ): number {
   return packs
     .filter((p) =>
-      activityId
-        ? isPackEligible(p, activityId, dateYMD)
+      disciplineId
+        ? isPackEligible(p, disciplineId, dateYMD)
         : p.status === "ACTIVO" && p.expiresAtYMD >= dateYMD && p.balance > 0,
     )
     .reduce((acc, p) => acc + p.balance, 0);
