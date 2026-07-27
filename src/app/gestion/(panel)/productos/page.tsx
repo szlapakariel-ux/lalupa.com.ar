@@ -10,7 +10,7 @@ export default async function ProductosPage() {
   await requirePageUser("ADMIN");
   const [products, disciplines] = await Promise.all([
     prisma.packProduct.findMany({
-      include: { discipline: { select: { name: true } } },
+      include: { discipline: { select: { id: true, name: true, active: true } } },
       orderBy: [{ active: "desc" }, { classCount: "asc" }],
     }),
     prisma.discipline.findMany({
@@ -41,7 +41,7 @@ export default async function ProductosPage() {
                   </p>
                   <p className="text-sm text-tinta-suave">
                     {p.discipline
-                      ? `Solo ${p.discipline.name} (cualquier horario)`
+                      ? `Solo ${p.discipline.name} (cualquier horario)${p.discipline.active ? "" : " — disciplina inactiva"}`
                       : "Aplica a todas las disciplinas"}
                   </p>
                 </div>
@@ -52,7 +52,11 @@ export default async function ProductosPage() {
               <details className="mt-2">
                 <summary className="cursor-pointer text-sm text-terracota">Editar</summary>
                 <div className="mt-3">
-                  <ProductForm product={p} disciplines={disciplines} />
+                  <ProductForm
+                    product={p}
+                    disciplines={disciplines}
+                    currentDiscipline={p.discipline}
+                  />
                 </div>
               </details>
             </Card>

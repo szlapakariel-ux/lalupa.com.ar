@@ -24,15 +24,26 @@ interface ProductValues {
 export function ProductForm({
   product,
   disciplines,
+  currentDiscipline,
 }: {
   product?: ProductValues;
   disciplines: Array<{ id: string; name: string }>;
+  /** Disciplina actual del producto (puede estar inactiva). */
+  currentDiscipline?: { id: string; name: string; active: boolean } | null;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(
     saveProductAction,
     {},
   );
   const prefix = product?.id ?? "new";
+  // La disciplina actual se conserva visible aunque esté inactiva: el
+  // producto NO se convierte silenciosamente en genérico; cambiarla es una
+  // decisión explícita (y el servidor exige disciplinas activas para
+  // asignaciones nuevas).
+  const showInactiveCurrent =
+    currentDiscipline &&
+    !currentDiscipline.active &&
+    !disciplines.some((d) => d.id === currentDiscipline.id);
 
   return (
     <form action={formAction} className="space-y-3">
@@ -93,6 +104,11 @@ export function ProductForm({
             className={inputClass()}
           >
             <option value="">Todas las disciplinas</option>
+            {showInactiveCurrent && (
+              <option value={currentDiscipline.id}>
+                {currentDiscipline.name} (inactiva)
+              </option>
+            )}
             {disciplines.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}

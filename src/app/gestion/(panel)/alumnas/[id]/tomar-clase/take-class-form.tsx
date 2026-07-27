@@ -17,26 +17,10 @@ interface ActivityOption {
   id: string;
   label: string;
   weekday: string;
+  /** Próxima fecha real de este horario ("YYYY-MM-DD"), calculada en el server. */
+  autoDateYMD: string;
+  /** Saldo calculado para autoDateYMD (no para "hoy"). */
   balance: number;
-}
-
-const WEEKDAY_INDEX: Record<string, number> = {
-  DOMINGO: 0,
-  LUNES: 1,
-  MARTES: 2,
-  MIERCOLES: 3,
-  JUEVES: 4,
-  VIERNES: 5,
-  SABADO: 6,
-};
-
-/** Próxima fecha (>= hoy) que cae en el día de semana del horario. */
-function nextDateForWeekday(todayYMD: string, weekday: string): string {
-  const date = new Date(`${todayYMD}T00:00:00.000Z`);
-  const target = WEEKDAY_INDEX[weekday] ?? date.getUTCDay();
-  const delta = (target - date.getUTCDay() + 7) % 7;
-  date.setUTCDate(date.getUTCDate() + delta);
-  return date.toISOString().slice(0, 10);
 }
 
 export function TakeClassForm({
@@ -56,11 +40,12 @@ export function TakeClassForm({
   );
   const first = activities[0];
   const [activityId, setActivityId] = useState(first?.id ?? "");
-  const [dateYMD, setDateYMD] = useState(
-    first ? nextDateForWeekday(today, first.weekday) : today,
-  );
+  const [dateYMD, setDateYMD] = useState(first?.autoDateYMD ?? today);
   const selected = activities.find((a) => a.id === activityId);
   const balance = selected?.balance ?? 0;
+  // El saldo mostrado corresponde a la fecha automática del horario; si la
+  // usuaria eligió otra fecha a mano, no afirmamos un número exacto.
+  const dateMatchesAuto = selected ? dateYMD === selected.autoDateYMD : true;
 
   if (activities.length === 0) {
     return (
@@ -81,7 +66,7 @@ export function TakeClassForm({
           onChange={(e) => {
             setActivityId(e.target.value);
             const next = activities.find((a) => a.id === e.target.value);
-            if (next) setDateYMD(nextDateForWeekday(today, next.weekday));
+            if (next) setDateYMD(next.autoDateYMD);
           }}
           className={inputClass()}
         >
@@ -120,25 +105,32 @@ export function TakeClassForm({
       </Field>
 
       {/* Saldo visible ANTES de confirmar (packs de la disciplina + genéricos) */}
-      <div
-        className={
-          balance > 0
-            ? "rounded-lg bg-exito-claro px-3 py-2 text-sm text-exito"
-            : "rounded-lg bg-alerta-claro px-3 py-2 text-sm text-alerta"
-        }
-        role="status"
-      >
-        {balance > 0
-          ? `Saldo disponible para esta disciplina: ${balance} clase${balance === 1 ? "" : "s"}. Si consume, quedará${balance - 1 === 1 ? "" : "n"} ${balance - 1}.`
-          : "Sin clases disponibles para esta disciplina."}
-      </div>
+      {dateMatchesAuto ? (
+        <div
+          className={
+            balance > 0
+              ? "rounded-lg bg-exito-claro px-3 py-2 text-sm text-exito"
+              : "rounded-lg bg-alerta-claro px-3 py-2 text-sm text-alerta"
+          }
+          role="status"
+        >
+          {balance > 0
+            ? `Saldo disponible para esta disciplina el ${dateYMD.split("-").reverse().join("/")}: ${balance} clase${balance === 1 ? "" : "s"}. Si consume, quedará${balance - 1 === 1 ? "" : "n"} ${balance - 1}.`
+            : "Sin clases disponibles para esta disciplina en esa fecha."}
+        </div>
+      ) : (
+        <div className="rounded-lg bg-arena-claro px-3 py-2 text-sm text-tinta-suave" role="status">
+          Elegiste una fecha distinta a la próxima clase de este horario. El
+          saldo definitivo se valida para la fecha elegida al registrar.
+        </div>
+      )}
 
-      {isAdmin && balance <= 0 && (
+      {isAdmin && dateMatchesAuto && balance <= 0 && (
         <label className="flex items-start gap-2 text-sm">
           <input type="checkbox" name="allowNegative" value="true" className="mt-1" />
           <span>
             Registrar igualmente dejando saldo negativo (acción administrativa;
-            queda auditada).
+            queda auditada). Solo aplica a packs genéricos o de esta disciplina.
           </span>
         </label>
       )}

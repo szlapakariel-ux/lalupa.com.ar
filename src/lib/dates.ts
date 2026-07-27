@@ -69,6 +69,15 @@ export function weekdayOfYMD(ymd: string): WeekdayName {
   return WEEKDAY_BY_INDEX[ymdToDate(ymd).getUTCDay()];
 }
 
+/** Próxima fecha (>= fromYMD) que cae en el día de semana indicado. */
+export function nextDateForWeekday(fromYMD: string, weekday: WeekdayName): string {
+  const date = ymdToDate(fromYMD);
+  const target = WEEKDAY_BY_INDEX.indexOf(weekday);
+  const delta = (target - date.getUTCDay() + 7) % 7;
+  date.setUTCDate(date.getUTCDate() + delta);
+  return dateToYMD(date);
+}
+
 export const WEEKDAY_LABELS: Record<WeekdayName, string> = {
   LUNES: "Lunes",
   MARTES: "Martes",
