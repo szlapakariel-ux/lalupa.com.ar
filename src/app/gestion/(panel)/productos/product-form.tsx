@@ -10,7 +10,6 @@ import {
   inputClass,
 } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
-import { WEEKDAY_LABELS, type WeekdayName } from "@/lib/dates";
 
 interface ProductValues {
   id: string;
@@ -18,16 +17,16 @@ interface ProductValues {
   classCount: number;
   referencePrice: unknown;
   validityDays: number;
-  activityId: string | null;
+  disciplineId: string | null;
   active: boolean;
 }
 
 export function ProductForm({
   product,
-  activities,
+  disciplines,
 }: {
   product?: ProductValues;
-  activities: Array<{ id: string; name: string; weekday: string; startTime: string }>;
+  disciplines: Array<{ id: string; name: string }>;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(
     saveProductAction,
@@ -86,22 +85,26 @@ export function ProductForm({
             className={inputClass()}
           />
         </Field>
-        <Field label="Actividad aplicable" htmlFor={`${prefix}-activity`}>
+        <Field label="Disciplina aplicable" htmlFor={`${prefix}-discipline`}>
           <select
-            id={`${prefix}-activity`}
-            name="activityId"
-            defaultValue={product?.activityId ?? ""}
+            id={`${prefix}-discipline`}
+            name="disciplineId"
+            defaultValue={product?.disciplineId ?? ""}
             className={inputClass()}
           >
-            <option value="">Todas las actividades</option>
-            {activities.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name} · {WEEKDAY_LABELS[a.weekday as WeekdayName]} {a.startTime}
+            <option value="">Todas las disciplinas</option>
+            {disciplines.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
               </option>
             ))}
           </select>
         </Field>
       </div>
+      <p className="text-xs text-tinta-suave">
+        Un pack de una disciplina sirve para CUALQUIER horario de esa
+        disciplina. &quot;Todas las disciplinas&quot; lo hace genérico.
+      </p>
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"

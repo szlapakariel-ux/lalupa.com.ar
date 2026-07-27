@@ -8,15 +8,15 @@ export const dynamic = "force-dynamic";
 
 export default async function ProductosPage() {
   await requirePageUser("ADMIN");
-  const [products, activities] = await Promise.all([
+  const [products, disciplines] = await Promise.all([
     prisma.packProduct.findMany({
-      include: { activity: { select: { name: true } } },
+      include: { discipline: { select: { name: true } } },
       orderBy: [{ active: "desc" }, { classCount: "asc" }],
     }),
-    prisma.activity.findMany({
+    prisma.discipline.findMany({
       where: { active: true },
-      select: { id: true, name: true, weekday: true, startTime: true },
-      orderBy: [{ name: "asc" }],
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
     }),
   ]);
 
@@ -40,7 +40,9 @@ export default async function ProductosPage() {
                     </span>
                   </p>
                   <p className="text-sm text-tinta-suave">
-                    {p.activity ? `Solo ${p.activity.name}` : "Aplica a todas las actividades"}
+                    {p.discipline
+                      ? `Solo ${p.discipline.name} (cualquier horario)`
+                      : "Aplica a todas las disciplinas"}
                   </p>
                 </div>
                 <Badge tone={p.active ? "exito" : "neutral"}>
@@ -50,7 +52,7 @@ export default async function ProductosPage() {
               <details className="mt-2">
                 <summary className="cursor-pointer text-sm text-terracota">Editar</summary>
                 <div className="mt-3">
-                  <ProductForm product={p} activities={activities} />
+                  <ProductForm product={p} disciplines={disciplines} />
                 </div>
               </details>
             </Card>
@@ -64,7 +66,7 @@ export default async function ProductosPage() {
             + Nuevo producto
           </summary>
           <div className="mt-3">
-            <ProductForm activities={activities} />
+            <ProductForm disciplines={disciplines} />
           </div>
         </details>
       </Card>
