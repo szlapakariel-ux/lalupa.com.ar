@@ -1,10 +1,56 @@
 {
   "name": "espacio-la-lupa",
   "version": "1.0.0",
+  "private": true,
+  "description": "Sitio público de Espacio La Lupa + sistema interno de gestión (/gestion)",
+  "engines": {
+    "node": "24.x"
+  },
+  "packageManager": "npm@11.6.2",
   "scripts": {
-    "start": "serve -s . -l $PORT"
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "start:railway": "prisma migrate deploy && next start -p ${PORT:-3000}",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit",
+    "test:int": "node scripts/test-int.mjs",
+    "test:e2e": "playwright test",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "overrides": {
+    "postcss": "^8.5.23",
+    "next": {
+      "sharp": "^0.35.3"
+    }
   },
   "dependencies": {
-    "serve": "^14.2.0"
+    "@prisma/client": "^6.16.2",
+    "@tailwindcss/postcss": "^4.1.13",
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "bcryptjs": "^3.0.2",
+    "next": "^15.5.4",
+    "prisma": "^6.16.2",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "tailwindcss": "^4.1.13",
+    "tsx": "^4.20.5",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@playwright/test": "^1.55.1",
+    "embedded-postgres": "17.10.0-beta.17",
+    "eslint": "^9.36.0",
+    "eslint-config-next": "^15.5.4",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
   }
 }
