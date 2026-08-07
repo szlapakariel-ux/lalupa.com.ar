@@ -54,20 +54,13 @@ export function summarizeStudent(s: StudentWithRelations, role: Role): StudentSu
     [...s.packs].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] ??
     null;
 
-  const purchased = s.packs.reduce(
-    (acc, p) =>
-      acc + p.ledger.filter((m) => m.delta > 0).reduce((a, m) => a + m.delta, 0),
-    0,
-  );
-  const used = s.packs.reduce(
-    (acc, p) =>
-      acc +
-      p.ledger
-        .filter((m) => m.type === "CLASS_USED")
-        .reduce((a, m) => a + Math.abs(m.delta), 0),
-    0,
-  );
-  const available = vigentes.reduce((acc, p) => acc + sumBalance(p.ledger), 0);
+  // El listado es una vista operativa del pack vigente, no un total contable
+  // histórico. Los packs vencidos/cancelados y las cargas corregidas siguen
+  // disponibles en la ficha y auditoría, pero no deben inflar "compradas".
+  const currentBalance = current ? sumBalance(current.ledger) : 0;
+  const purchased = current?.classCount ?? 0;
+  const available = current?.status === "ACTIVO" ? currentBalance : 0;
+  const used = current ? Math.max(0, purchased - Math.max(0, currentBalance)) : 0;
 
   const visibleAlerts =
     role === "ADMIN" ? s.alerts : s.alerts.filter((a) => a.visibility === "TODOS");
