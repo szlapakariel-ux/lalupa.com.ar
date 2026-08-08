@@ -93,6 +93,12 @@ enum AuditResult {
   DENIED
 }
 
+enum PublicExperienceStatus {
+  ACTIVA
+  PROXIMA
+  PROXIMAMENTE
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -114,6 +120,55 @@ model User {
   alertsCreated         StudentAlert[]
   auditEvents           AuditEvent[]
   settingsUpdated       Settings[]
+  publicExperiencesUpdated PublicExperience[]
+}
+
+model PublicExperience {
+  id          String                 @id @default(cuid())
+  category    String
+  title       String
+  guides      String
+  description String
+  status      PublicExperienceStatus @default(PROXIMAMENTE)
+  details     String?
+  ctaLabel    String?
+  ctaUrl      String?
+  position    Int                    @default(0)
+  published   Boolean                @default(false)
+  updatedById String
+  updatedBy   User                   @relation(fields: [updatedById], references: [id])
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  schedules PublicExperienceSchedule[]
+  images    PublicExperienceImage[]
+
+  @@index([published, position])
+}
+
+model PublicExperienceSchedule {
+  id           String           @id @default(cuid())
+  experienceId String
+  experience   PublicExperience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  audience     String?
+  text         String
+  position     Int              @default(0)
+
+  @@index([experienceId, position])
+}
+
+model PublicExperienceImage {
+  id           String           @id @default(cuid())
+  experienceId String
+  experience   PublicExperience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  data         Bytes
+  mimeType     String
+  alt          String?
+  isCover      Boolean          @default(false)
+  position     Int              @default(0)
+  createdAt    DateTime         @default(now())
+
+  @@index([experienceId, isCover, position])
 }
 
 model Session {

@@ -10,6 +10,7 @@ export default async function MasPage() {
     { href: "/gestion/actividades", label: "Actividades", desc: "Días, horarios y profesoras" },
     ...(isAdmin
       ? [
+          { href: "/gestion/programacion", label: "Programación web", desc: "Contenido e imágenes de lalupa.com.ar" },
           { href: "/gestion/productos", label: "Packs y precios", desc: "Productos y vigencias" },
           { href: "/gestion/usuarios", label: "Usuarias", desc: "Cuentas y roles" },
           { href: "/gestion/auditoria", label: "Auditoría", desc: "Registro de acciones" },

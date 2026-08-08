@@ -19,6 +19,7 @@ const ITEMS: NavItem[] = [
   { href: "/gestion/asistencia", label: "Asistencia", icon: "✓" },
   { href: "/gestion/pagos", label: "Pagos", icon: "$", adminOnly: true },
   { href: "/gestion/actividades", label: "Actividades", icon: "◷", secondary: true },
+  { href: "/gestion/programacion", label: "Programación web", icon: "◫", secondary: true, adminOnly: true },
   { href: "/gestion/productos", label: "Packs y precios", icon: "▦", secondary: true, adminOnly: true },
   { href: "/gestion/usuarios", label: "Usuarias", icon: "⚙", secondary: true, adminOnly: true },
   { href: "/gestion/auditoria", label: "Auditoría", icon: "≡", secondary: true, adminOnly: true },

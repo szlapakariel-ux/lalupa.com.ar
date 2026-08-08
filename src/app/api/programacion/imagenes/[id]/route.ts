@@ -1,0 +1,2 @@
+import { prisma } from "@/server/db";
+export async function GET(_request:Request,{params}:{params:Promise<{id:string}>}) { const {id}=await params; const image=await prisma.publicExperienceImage.findUnique({where:{id},select:{data:true,mimeType:true,experience:{select:{published:true}}}}); if(!image?.experience.published)return new Response("No encontrada",{status:404}); return new Response(new Uint8Array(image.data),{headers:{"Content-Type":image.mimeType,"Cache-Control":"public, max-age=86400, immutable","X-Content-Type-Options":"nosniff"}}); }

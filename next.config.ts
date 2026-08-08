@@ -17,6 +17,7 @@ const gestionHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  experimental: { serverActions: { bodySizeLimit: "65mb" } },
   // El type-check del build cubre SOLO el código de la aplicación: los
   // tests y sus configs importan devDependencies (vitest, playwright,
   // embedded-postgres) que — correctamente — no existen en la instalación
