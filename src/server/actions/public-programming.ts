@@ -40,7 +40,17 @@ export async function savePublicExperience(formData: FormData) {
     return record;
   });
   revalidatePath("/gestion/programacion");
-  redirect(`/gestion/programacion/${experience.id}?saved=1`);
+  redirect(`/gestion/programacion/${experience.id}?saved=1&published=${experience.published ? "1" : "0"}`);
+}
+
+export async function savePublicExperienceDraft(formData: FormData) {
+  formData.set("intent", "draft");
+  return savePublicExperience(formData);
+}
+
+export async function publishPublicExperience(formData: FormData) {
+  formData.set("intent", "publish");
+  return savePublicExperience(formData);
 }
 
 export async function uploadPublicImages(formData: FormData) {
