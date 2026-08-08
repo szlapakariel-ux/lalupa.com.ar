@@ -71,6 +71,8 @@ export async function uploadPublicImages(formData: FormData) {
     await audit(tx, { userId: user.id, action: "publicExperience.images.upload", entity: "PublicExperience", entityId: experienceId, metadata: { count: files.length }, ip: await clientIp() });
   });
   revalidatePath(`/gestion/programacion/${experienceId}`);
+  revalidatePath("/api/programacion");
+  redirect(`/gestion/programacion/${experienceId}?images=uploaded&count=${files.length}`);
 }
 
 export async function imageAction(formData: FormData) {
