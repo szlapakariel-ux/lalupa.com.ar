@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
 import path from "node:path";
 
-// Encabezados de seguridad solo para el área privada /gestion.
-// La página pública en "/" queda intacta e indexable.
+// La portada pública se sirve desde src/app/route.ts para añadir metadatos
+// sociales en la respuesta; el contenido visible de public/index.html sigue
+// intacto e indexable.
 const gestionHeaders = [
   { key: "X-Robots-Tag", value: "noindex, nofollow" },
   { key: "X-Frame-Options", value: "DENY" },
@@ -28,15 +29,6 @@ const nextConfig: NextConfig = {
   // Evita que Next infiera mal la raíz del workspace si existen otros
   // lockfiles fuera del proyecto.
   outputFileTracingRoot: path.join(__dirname),
-  async rewrites() {
-    return {
-      // El sitio público original (public/index.html, sin modificaciones)
-      // se sirve tal cual en la raíz.
-      beforeFiles: [{ source: "/", destination: "/index.html" }],
-      afterFiles: [],
-      fallback: [],
-    };
-  },
   async headers() {
     return [
       { source: "/gestion", headers: gestionHeaders },
