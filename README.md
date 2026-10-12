@@ -2,9 +2,9 @@
 
 Aplicación única que sirve:
 
-- **`/`** — el sitio público original (https://espacio.lalupa.com.ar/), un
-  `index.html` autoextraíble que se conserva **byte-idéntico** en
-  `public/index.html` (verificado por test E2E).
+- **`/`** — el sitio público original (https://espacio.lalupa.com.ar/). La
+  ruta de Next.js inyecta metadatos Open Graph y Twitter en la respuesta para
+  generar vistas previas sociales; `public/index.html` permanece byte-idéntico.
 - **`/gestion`** — el sistema privado de gestión del estudio: alumnas, packs,
   saldos, asistencia, pagos, alertas y auditoría. Con `noindex` y
   encabezados de seguridad; nunca aparece en buscadores.
@@ -23,10 +23,11 @@ Aplicación única que sirve:
 ### Estructura
 
 ```
-public/index.html        ← sitio público ORIGINAL (no tocar)
+public/index.html        ← contenido fuente ORIGINAL, sin modificar
 prisma/                  ← schema, migraciones y seed
 src/
   middleware.ts          ← redirección de conveniencia para /gestion
+  app/route.ts           ← sirve la portada con metadatos sociales
   app/gestion/           ← pantallas (login + panel)
   server/
     auth/                ← password, sesiones, rate limit, requireUser
